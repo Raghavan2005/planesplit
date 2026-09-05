@@ -243,6 +243,7 @@ two full `--all` runs).
 | `docs/BUILD_PLAN.md`, `docs/TASK_BREAKDOWN.md`, `docs/MILESTONES.md` | How the build was planned and sequenced |
 | `docs/STATUS.md` | Current state — what's implemented, tested, and next |
 | `docs/INNOVATION.md` | Added-value capabilities beyond the PS31 baseline (multi-flow root-cause correlation, closed-loop deterministic remediation) — never confused with R1–R13 |
+| `docs/FUTURE_VISION.md` | Vision-only ideas (AI-assisted, AWS-aware recommendation layer) raised in jury Q&A — explicitly **not implemented**, kept separate from `docs/INNOVATION.md` so built and unbuilt are never conflated |
 
 ## Known gaps
 

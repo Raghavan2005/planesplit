@@ -36,6 +36,8 @@ Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case tes
 
 - `docs/ARCHITECTURE.md` §6 — added the Python-vs-C/C++ decision record that §3's language choice had stated but never justified, matching §5's existing Mininet-vs-pure-simulation decision format. Doc-only change, no code affected.
 
+- `docs/FUTURE_VISION.md` — written up an AI-assisted, AWS-aware recommendation-layer idea raised live in jury Q&A (going beyond PS31's detection scope into path/config recommendations). Explicitly marked NOT IMPLEMENTED and kept out of `docs/INNOVATION.md` on purpose, so the one real "claimed but not built" mistake this project already made and fixed (the correlator) isn't repeated for this idea too. Reframes the jury answer's weaker point (multi-LLM voting as a hallucination fix) around its actually-defensible parts: RAG grounding in real recorded evidence, and human review as the real trust gate.
+
 ## In progress
 Nothing.
 
