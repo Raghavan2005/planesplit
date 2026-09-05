@@ -4,7 +4,7 @@ definition (scenarios/definitions.py) twice and diffs the results field by
 field, since ProbeResult holds an Alert (not directly comparable via ==
 unless we compare its fields) rather than a plain value.
 """
-from planesplit.scenarios.definitions import ALL_SCENARIOS, remediation_demo
+from planesplit.scenarios.definitions import ALL_SCENARIOS, correlation_demo, remediation_demo
 
 
 def _as_comparable(results):
@@ -43,3 +43,13 @@ def test_remediation_demo_is_repeatable():
         second_remediation.restored_next_hop,
         second_remediation.fixed_at,
     )
+
+
+def test_correlation_demo_is_repeatable():
+    """R13 also applies to the added-value correlation demo."""
+    first_results, first_reports = correlation_demo()
+    second_results, second_reports = correlation_demo()
+    assert _as_comparable(first_results) == _as_comparable(second_results)
+    assert [(r.responsible_router, [str(f) for f in r.flows]) for r in first_reports] == [
+        (r.responsible_router, [str(f) for f in r.flows]) for r in second_reports
+    ]

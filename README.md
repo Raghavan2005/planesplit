@@ -82,7 +82,7 @@ planesplit/
 ├── verify/            prober.py (boundary-aware probe generation), verifier.py (Alert, per-flow grace-window check)
 ├── cli/              demo.py — one-command runnable demo
 ├── scenarios/         definitions.py — shared, deterministic scenario definitions (used by both the CLI and the tests)
-├── tests/             51 tests: unit (core, faults, verifier, remediator) + integration (all 6 scenarios) + repeatability + CLI smoke
+├── tests/             58 tests: unit (core, faults, verifier, remediator, correlator) + integration (all 6 scenarios) + repeatability + CLI smoke
 └── requirements.txt
 
 docs/                 research, architecture decisions, requirements traceability matrix,
@@ -102,12 +102,12 @@ pip install -r planesplit/requirements.txt
 pytest planesplit/tests/
 ```
 
-51 tests, all passing, including: 7 core-model unit tests, 7 fault-injection/
+58 tests, all passing, including: 7 core-model unit tests, 7 fault-injection/
 prober unit tests, 8 verifier unit tests, 6 full-pipeline integration tests
-(one per `docs/TEST_PLAN.md` scenario), 11 negative/edge-case tests, 6 tests
-for the added-value remediation feature (`docs/INNOVATION.md`), and
-repeatability + CLI smoke tests that run every scenario/demo twice and
-assert identical output.
+(one per `docs/TEST_PLAN.md` scenario), 11 negative/edge-case tests, 11 tests
+for the two added-value features — remediation and correlation
+(`docs/INNOVATION.md`) — and repeatability + CLI smoke tests that run every
+scenario/demo twice and assert identical output.
 
 ## Run the demo
 
@@ -115,6 +115,7 @@ assert identical output.
 python -m planesplit.cli.demo --all                # every scenario
 python -m planesplit.cli.demo --scenario 3         # a single scenario by its docs/TEST_PLAN.md number (1-6)
 python -m planesplit.cli.demo --remediation-demo   # added-value auto-remediation demo (docs/INNOVATION.md)
+python -m planesplit.cli.demo --correlation-demo   # added-value multi-flow root-cause correlation demo (docs/INNOVATION.md)
 ```
 
 Output is a color-coded table (PASS / TOLERATED / ALERT per probe) followed
@@ -166,6 +167,3 @@ two full `--all` runs).
 - A served web visualization was scoped as a stretch goal only and has not
   been built to the same standard as `planesplit/` — see `docs/STATUS.md`
   "Known gaps" for the specifics of the `backend/`/`frontend/` prototype.
-- `docs/INNOVATION.md`'s multi-flow root-cause correlation write-up
-  previously claimed an implementation that doesn't exist in this repo —
-  flagged in that doc and in `docs/STATUS.md`, not yet resolved.

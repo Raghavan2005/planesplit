@@ -2,7 +2,7 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (added-value remediation feature built; correlator documentation-integrity issue found and flagged, not yet resolved)
+**Last updated:** 2026-09-05 (added-value remediation feature built; correlator documentation-integrity issue found, flagged, and resolved by building the feature for real)
 
 ## Current phase
 Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case testing) closed, surfacing and fixing 2 real bugs; every row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is Done with real code/test citations; M5's timed rehearsal (`docs/FINAL_DEMO_SCRIPT.md`) is done. The only item not built is the stretch-goal web visualization, which is a deliberate, documented choice, not an oversight (see "Known gaps" below).
@@ -32,15 +32,16 @@ Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case tes
 - **M5 timed rehearsal**: `docs/FINAL_DEMO_SCRIPT.md` created (CLAUDE.md §42 requirement, previously missing entirely). Built from an actually-measured run (`--all` wall time: 0.155s; 88 lines of output) rather than guessed pacing — every command and quoted output line in the script was re-run and verified to match real CLI output before being written down. Notes that program runtime isn't the pacing bottleneck (it's all presenter narration) and recommends running scenarios individually live rather than dumping `--all`.
 
 - **Innovation 2 — Closed-Loop Deterministic Remediation** (`docs/INNOVATION.md`): `verify/remediator.py::Remediator.remediate()` corrects a `Verifier`-proven divergence by replaying the RIB's own never-faulted intent through one clean `UpdateChannel.apply()` call — no LLM, no inference, no candidate-fix scoring, matching `CLAUDE.md` §24. 6 new tests in `tests/test_remediator.py`, plus a repeatability test and a CLI smoke test. Demonstrated via `python -m planesplit.cli.demo --remediation-demo`. Deliberately kept out of `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER` and `docs/REQUIREMENTS.md` since it's not one of R1–R13. One known limitation documented in `docs/INNOVATION.md` §5 (a stale narrower FIB entry from a prior CORRUPT fault isn't cleaned up, though it's invisible to the standard boundary probe).
+- **Innovation 1 — Multi-Flow Root-Cause Correlation, built for real** (`docs/INNOVATION.md`): this feature was previously *claimed* as implemented in the doc but didn't exist anywhere in the repo — a real `CLAUDE.md` §8/§35 violation from a prior session (see "Known gaps" history below, now resolved). Now actually built: `verify/correlator.py::correlate(alerts) -> list[RootCauseReport]` groups alerts by `Alert.responsible_router` — an exact grouping, not a probabilistic inference, since the fault model only ever targets one router per update. 5 tests in `tests/test_correlator.py`. Demonstrated via `scenarios/definitions.py::correlation_demo()` and `python -m planesplit.cli.demo --correlation-demo`, rendered as a "Root Cause Analysis" panel. Same exclusion discipline as remediation: not in `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER`, not in `docs/REQUIREMENTS.md`.
 
 ## In progress
 Nothing.
 
 ## Next up
-- Decide what to do about the correlator documentation-integrity issue below (build it for real, or strike the false claim from `docs/INNOVATION.md`).
+Nothing required.
 
 ## Known gaps / not yet covered
-- **`docs/INNOVATION.md`'s original §5 ("Innovation 1: Multi-Flow Root-Cause Correlation") claimed a real implementation — `verify/correlator.py`, `tests/test_correlator.py`, `scenario_7_multi_flow_root_cause()` — that does not exist anywhere in the repo or git history.** Sections 1–4 of that write-up (the design/rationale) are sound; section 5's implementation claim was false, a `CLAUDE.md` §8/§35 violation from a prior session. Flagged in-place in the doc; not yet resolved (build it for real, or correct the doc to remove the false claim).
+- **Resolved, kept for the record:** `docs/INNOVATION.md`'s §5 ("Innovation 1: Multi-Flow Root-Cause Correlation") previously claimed a real implementation — `verify/correlator.py`, `tests/test_correlator.py`, `scenario_7_multi_flow_root_cause()` — that did not exist anywhere in the repo or git history, a `CLAUDE.md` §8/§35 violation from a prior session. Now actually built (see "Done" above); the doc's implementation section was rewritten to cite the real files/tests.
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
 - **`backend/` and `frontend/` — a 3D web visualization matching `docs/UI_PLAN.md`, added to the repo but not yet reconciled with `planesplit/`.** This reverses the earlier "CLI-only" decision (`docs/ARCHITECTURE.md` §4, `docs/MVP.md` §3) — that reversal hasn't been re-recorded as a formal decision yet, only tracked here. Real, known issues, none fixed yet:
   1. `backend/network.py` **reimplements** `Router`/`Network`/`Packet` from scratch instead of importing the tested `planesplit/core/` classes — a second, unverified copy of logic that already exists, tested, in `planesplit/`.
@@ -53,4 +54,4 @@ Nothing.
   - **Not yet decided**: whether to fix `backend/` to import and wrap the real `planesplit` logic (recommended — keeps one tested source of truth) or leave it as an independent prototype.
 
 ## Test status
-51/51 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`, `test_remediator.py`). No failures, no skips.
+58/58 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`, `test_remediator.py`, `test_correlator.py`). No failures, no skips.

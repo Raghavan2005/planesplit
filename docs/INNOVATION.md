@@ -35,9 +35,15 @@ This is deliberately less sophisticated than Sherlock/SCORE — and that's the h
 
 ## 5. Implementation
 
-`verify/correlator.py::correlate(alerts) -> list[RootCauseReport]`. See `tests/test_correlator.py` for the demonstrated cases: multiple flows correlated under one router, a lone alert passed through unchanged, and two alerts at *different* routers correctly staying uncorrelated. Demonstrated end-to-end in `scenarios/definitions.py::scenario_7_multi_flow_root_cause()` and rendered by `cli/demo.py` as a "Root Cause Analysis" section whenever more than one alert shares a router.
+**Status: Implemented (2026-09-05).** `verify/correlator.py::correlate(alerts) -> list[RootCauseReport]` implements exactly the grouping algorithm in section 3, keyed on `Alert.responsible_router`, preserving first-appearance order (dict insertion order) so output is deterministic for R13. `RootCauseReport` carries `responsible_router`, the full `alerts` list, and `flows`/`is_correlated` convenience properties.
 
-> **Status check (2026-09-05): none of this section 5 exists in the repo.** `planesplit/verify/correlator.py`, `tests/test_correlator.py`, and `scenario_7_multi_flow_root_cause()` are not present anywhere in the working tree or git history. Sections 1–4 above describe a real, sound design, but the implementation claim in section 5 is false and needs to be either built for real or struck — per `CLAUDE.md` §8/§35, a feature is not "Done" without code and test evidence, and this doc was asserting both without either existing.
+`tests/test_correlator.py` (5 tests): two alerts at the same router correlate into one report; a lone alert passes through unchanged; alerts at different routers stay uncorrelated; a mixed case (2 alerts at router A, 1 at router B) produces exactly two reports with the right membership; an empty alert list produces no reports.
+
+Demonstrated end-to-end in `scenarios/definitions.py::correlation_demo()` — named `correlation_demo()` rather than the `scenario_7_multi_flow_root_cause()` name originally proposed above, for consistency with Innovation 2's `remediation_demo()` naming, and deliberately excluded from `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER` for the same reason: never mistaken for one of the six PS31-baseline scenarios. Two independent flows routed through the same router both suffer the identical `CORRUPT` fault shape, so both alerts deterministically name the same `responsible_router` — the exact fact the algorithm relies on, not a contrived coincidence.
+
+Rendered by `cli/demo.py --correlation-demo` as a "Root Cause Analysis" panel whenever a report has more than one alert. `tests/test_repeatability.py::test_correlation_demo_is_repeatable` and `tests/test_cli_smoke.py::test_main_correlation_demo_runs_clean` extend R13 and the CLI smoke-test pattern to this feature. Full suite: 58/58 passing.
+
+> **Resolved (2026-09-05):** an earlier version of this section claimed this implementation existed when it didn't (see `docs/STATUS.md` "Known gaps" history) — that was a `CLAUDE.md` §8/§35 violation. It's now built for real, with the file/test citations above matching the actual repo.
 
 ---
 

@@ -12,6 +12,7 @@ from planesplit.core.control_plane import ControlPlaneManager
 from planesplit.core.network import Network
 from planesplit.core.router import Router
 from planesplit.faults.update_channel import FaultMode, InjectedFault, UpdateChannel
+from planesplit.verify.correlator import RootCauseReport, correlate
 from planesplit.verify.prober import probe_flow
 from planesplit.verify.remediator import Remediator, RemediationResult
 from planesplit.verify.verifier import Alert, Verifier
@@ -176,6 +177,39 @@ def remediation_demo() -> tuple[list[ProbeResult], RemediationResult]:
 
     after = _probe("Remediation Demo", "T=3.0s (after auto-remediation)", net, verifier, FLOW_1, HOST_A, 3.0)
     return [before, after], remediation
+
+
+def correlation_demo() -> tuple[list[ProbeResult], list[RootCauseReport]]:
+    """NOT one of docs/TEST_PLAN.md's numbered scenarios (1-6) — demonstrates
+    docs/INNOVATION.md "Innovation 1: Multi-Flow Root-Cause Correlation".
+    Named `correlation_demo()` rather than the `scenario_7_...` name
+    originally proposed in that doc, for consistency with
+    `remediation_demo()`'s naming and its exclusion from
+    ALL_SCENARIOS/SCENARIO_BY_NUMBER, so neither is ever mistaken for a
+    PS31-baseline scenario.
+
+    Both flows are routed through router A and both suffer the identical
+    CORRUPT fault shape, so both alerts deterministically point at the same
+    responsible_router — the exact grouping fact correlate() relies on.
+    """
+    net, cpm, channel, verifier = _build_pipeline()
+    update_1 = cpm.push_route(FLOW_1, "A", "D")
+    verifier.push_legitimate_change(FLOW_1, now=0.0)
+    channel.apply(update_1, InjectedFault(mode=FaultMode.CORRUPT, corrupt_prefixlen_delta=1), now=0.0)
+
+    update_2 = cpm.push_route(FLOW_2, "A", "D")
+    verifier.push_legitimate_change(FLOW_2, now=0.0)
+    channel.apply(update_2, InjectedFault(mode=FaultMode.CORRUPT, corrupt_prefixlen_delta=1), now=0.0)
+
+    channel.tick(3.0)
+    results = [
+        _probe("Correlation Demo", "Flow 1 @ T=3.0s (corrupted)", net, verifier, FLOW_1, HOST_A, 3.0),
+        _probe("Correlation Demo", "Flow 2 @ T=3.0s (corrupted)", net, verifier, FLOW_2, HOST_A, 3.0),
+    ]
+    alerts = [r.alert for r in results if r.alert is not None]
+    assert len(alerts) == 2  # deterministic fault always reproduces both alerts
+
+    return results, correlate(alerts)
 
 
 ALL_SCENARIOS = [

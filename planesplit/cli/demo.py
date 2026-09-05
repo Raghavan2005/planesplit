@@ -12,7 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from planesplit.scenarios.definitions import ALL_SCENARIOS, SCENARIO_BY_NUMBER, ProbeResult, remediation_demo
+from planesplit.scenarios.definitions import ALL_SCENARIOS, SCENARIO_BY_NUMBER, ProbeResult, correlation_demo, remediation_demo
+from planesplit.verify.correlator import RootCauseReport
 from planesplit.verify.remediator import RemediationResult
 
 STATUS_STYLE = {
@@ -110,6 +111,24 @@ def print_remediation_evidence(result: RemediationResult, console: Console) -> N
     ))
 
 
+def print_root_cause_analysis(reports: list[RootCauseReport], console: Console) -> None:
+    correlated = [r for r in reports if r.is_correlated]
+    if not correlated:
+        console.print("\n[bold green]No correlated root causes — every alert stood alone.[/bold green]")
+        return
+    for r in correlated:
+        flows = ", ".join(str(f) for f in r.flows)
+        console.print(Panel(
+            f"[bold]{len(r.alerts)} flows[/bold] ({flows}) all diverge at the same router: "
+            f"[bold]{r.responsible_router}[/bold].\n\n"
+            "Reported as one shared root cause instead of separate, seemingly "
+            "unrelated alerts — an exact grouping on Alert.responsible_router, "
+            "not a probabilistic inference. See docs/INNOVATION.md \"Innovation 1\" "
+            "for why that's the correct, honest scope for this system.",
+            title="Root Cause Analysis", border_style="yellow", expand=False,
+        ))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PlaneSplit demo runner")
     parser.add_argument("--scenario", type=int, choices=sorted(SCENARIO_BY_NUMBER), help="run a single scenario by its docs/TEST_PLAN.md number (1-6)")
@@ -118,6 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         "--remediation-demo",
         action="store_true",
         help="run the added-value auto-remediation demo (docs/INNOVATION.md Innovation 2) instead of the PS31-baseline scenarios",
+    )
+    parser.add_argument(
+        "--correlation-demo",
+        action="store_true",
+        help="run the added-value multi-flow root-cause correlation demo (docs/INNOVATION.md Innovation 1) instead of the PS31-baseline scenarios",
     )
     args = parser.parse_args(argv)
 
@@ -130,6 +154,14 @@ def main(argv: list[str] | None = None) -> int:
         render(results, console)
         console.print()
         print_remediation_evidence(remediation, console)
+        return 0
+
+    if args.correlation_demo:
+        results, reports = correlation_demo()
+        print_hook(console)
+        console.print()
+        render(results, console)
+        print_root_cause_analysis(reports, console)
         return 0
 
     scenarios_to_run = ALL_SCENARIOS if (args.all or args.scenario is None) else [SCENARIO_BY_NUMBER[args.scenario]]
