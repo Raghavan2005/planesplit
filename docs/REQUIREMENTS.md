@@ -24,7 +24,7 @@ Every clause of the problem statement (`ps.md`) broken into atomic, testable req
 |----|-------------|--------|--------|
 | Q1 | No hardcoded detection results; UI/CLI output must reflect actual computed state. | CLAUDE.md §8 | Planned — verify at code review time, not just at design time. |
 | Q2 | Negative/edge cases tested: true negative, false positive attempt, boundary condition, duplicate/out-of-order probe, empty/malformed input. | CLAUDE.md §10 | Mostly closed — `TEST_PLAN.md` Scenario 4 (true negative), Scenario 5 (false-positive / concurrent flows), and Scenario 6 (route flapping / rapid repeated changes to the same flow) now added. Malformed/empty input still not covered — add once the Packet/probe data structures exist in code. |
-| Q3 | One-command start and one-command deterministic reset. | CLAUDE.md §29–30 | Not yet defined — depends on final entry-point script, to be added once code exists. |
+| Q3 | One-command start and one-command deterministic reset. | CLAUDE.md §29–30 | Closed — `python -m planesplit.cli.demo --all` is the one-command start; there is no reset step because every run builds a fresh in-memory topology from scratch (no persisted state), and output is deterministic (proven by `tests/test_repeatability.py`). See `README.md`. |
 
 ## Open gaps to close before implementation starts
 

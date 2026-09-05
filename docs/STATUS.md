@@ -25,8 +25,10 @@ M4 (CLI Demo + Test Suite Hardening) complete. The project is now a complete, PS
 ## In progress
 Nothing — M4 gate met (all tests green, CLI demo runs clean and repeatably). M0-M4 complete.
 
+- **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, and why there's no separate "reset" step — every run is a fresh in-memory build). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset), previously the last open process requirement.
+
 ## Next up
-M5 (optional, per `docs/MILESTONES.md`): README with setup/run/test instructions, a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
+Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
 
 ## Known gaps / not yet covered
 - `TEST_PLAN.md` doesn't yet cover malformed/empty input or duplicate/out-of-order probes — deferred; the scenario-definition format is now settled (M4), so this could be picked up next if time allows, but it's not gating anything.
