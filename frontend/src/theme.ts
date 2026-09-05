@@ -74,6 +74,12 @@ export const requestStatusColor = {
   dropped: '#f87171',
 } as const
 
+export const requestStatusLabel = {
+  delivered: 'DELIVERED',
+  diverged: 'DIVERGED',
+  dropped: 'DROPPED',
+} as const
+
 export const font = {
   sans: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
   mono: 'ui-monospace, Consolas, monospace',

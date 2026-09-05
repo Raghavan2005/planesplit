@@ -1,6 +1,7 @@
 import { status as STATUS_COLOR } from '../../theme'
 import type { FlowSnapshot } from '../../hooks/useSimulationSocket'
 import { RemediateButton } from './RemediateButton'
+import { SendRequestButton } from './SendRequestButton'
 
 // Detail for whichever single server is currently selected in the status
 // grid above — same fields the old per-server list item showed (CP/DP
@@ -11,9 +12,10 @@ interface ServerDetailCardProps {
   flow: FlowSnapshot | undefined
   isLive: boolean
   onRemediate: (serverId: string) => void
+  onSendRequest: (serverId: string) => void
 }
 
-export function ServerDetailCard({ flow, isLive, onRemediate }: ServerDetailCardProps) {
+export function ServerDetailCard({ flow, isLive, onRemediate, onSendRequest }: ServerDetailCardProps) {
   if (!flow) return null
   return (
     <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -39,6 +41,7 @@ export function ServerDetailCard({ flow, isLive, onRemediate }: ServerDetailCard
         </div>
       )}
       <RemediateButton serverId={flow.server_id} status={flow.status} isLive={isLive} onRemediate={onRemediate} />
+      <SendRequestButton serverId={flow.server_id} isLive={isLive} onSendRequest={onSendRequest} />
     </div>
   )
 }

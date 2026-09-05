@@ -69,3 +69,32 @@ export function collectEdges(traces: string[][]): [string, string][] {
 export function realHops(trace: string[], positions: MapPositions): string[] {
   return trace.filter((p) => p !== 'DROP' && p !== 'LOOP' && positions[p])
 }
+
+// Interpolates a point at fraction `t` (0..1) along the polyline formed by
+// `hops`' real positions, proportional to real segment length (not just
+// "hop index / hop count") so a discrete request_event marker moves at a
+// visually even pace over a path whose segments differ wildly in on-screen
+// length (e.g. the long Users->Firewall leg vs. a short Firewall->Server
+// leg once many servers are stacked close together).
+export function pointAlongHops(hops: string[], positions: MapPositions, t: number): MapPoint | null {
+  const pts = hops.map((h) => positions[h]).filter((p): p is MapPoint => Boolean(p))
+  if (pts.length === 0) return null
+  if (pts.length === 1) return pts[0]
+
+  const segLengths = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y))
+  const total = segLengths.reduce((a, b) => a + b, 0)
+  let target = Math.max(0, Math.min(1, t)) * total
+
+  for (let i = 0; i < segLengths.length; i++) {
+    const segLen = segLengths[i]
+    if (target <= segLen || i === segLengths.length - 1) {
+      const localT = segLen === 0 ? 0 : Math.min(1, target / segLen)
+      return {
+        x: pts[i].x + (pts[i + 1].x - pts[i].x) * localT,
+        y: pts[i].y + (pts[i + 1].y - pts[i].y) * localT,
+      }
+    }
+    target -= segLen
+  }
+  return pts[pts.length - 1]
+}

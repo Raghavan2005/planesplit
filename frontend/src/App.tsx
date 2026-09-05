@@ -22,11 +22,14 @@ import { RouterNode } from './components/scene/RouterNode'
 import { UserCluster } from './components/scene/UserCluster'
 import { Packet } from './components/scene/Packet'
 import { PathLine } from './components/scene/PathLine'
+import { RequestPacket } from './components/scene/RequestPacket'
 import { nodeKindFor, statusForNode, isResponsibleForActiveFault } from './components/topologyStatus'
+import { TopologyMap } from './components/map/TopologyMap'
 import { ConnectingOverlay } from './components/ui/ConnectingOverlay'
 import { ServerStatusGrid } from './components/ui/ServerStatusGrid'
 import { StatusLegend } from './components/ui/StatusLegend'
 import { ServerDetailCard } from './components/ui/ServerDetailCard'
+import { AnalysisPanel } from './components/ui/AnalysisPanel'
 import { LiveConsole } from './components/ui/LiveConsole'
 import { AlertToasts } from './components/ui/AlertToasts'
 import {
@@ -40,8 +43,10 @@ import {
   warningButtonStyle,
   secondaryButtonStyle,
   numberInputStyle,
+  rangeInputStyle,
 } from './theme'
 import { useSimulationSocket } from './hooks/useSimulationSocket'
+import { useActiveRequestEvents } from './hooks/useActiveRequestEvents'
 
 // --- UI COMPONENTS ---
 
@@ -81,6 +86,20 @@ export default function App() {
     flows, rootCauses, numUsers, connectionStatus, hasSnapshot,
     requestEvents, lastError, send,
   } = useSimulationSocket()
+
+  // Derives which request_events are still "in flight" for animation
+  // purposes (real events this client hasn't rendered before, kept alive
+  // only long enough to travel + show their outcome) — see
+  // hooks/useActiveRequestEvents.ts. Consumed by both the 3D scene and the
+  // 2D TopologyMap below so a request looks the same real event in either
+  // view.
+  const activeRequestEvents = useActiveRequestEvents(requestEvents)
+
+  // '3d' (the original R3F scene) vs '2d' (TopologyMap) — both read the
+  // exact same flows/requestEvents state from the same hook above, so
+  // switching views never re-fetches or duplicates data, only changes how
+  // the same real state is rendered.
+  const [viewMode, setViewMode] = useState('3d') // '3d' | '2d'
 
   // What the user has typed into the config fields — not yet applied until
   // "APPLY CONFIG" is clicked, so typing doesn't rebuild the network (and
@@ -366,6 +385,31 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          {/* 3D/2D view toggle — swaps only the center 'main' grid cell
+              below; both views read the exact same flows/requestEvents
+              state from the same useSimulationSocket() call above, so
+              switching never re-fetches or duplicates data. */}
+          <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '3px' }}>
+            <button
+              onClick={() => setViewMode('3d')}
+              style={{
+                ...(viewMode === '3d' ? buttonStyle : secondaryButtonStyle),
+                padding: '6px 14px', fontSize: '10px',
+              }}
+            >
+              3D
+            </button>
+            <button
+              onClick={() => setViewMode('2d')}
+              style={{
+                ...(viewMode === '2d' ? buttonStyle : secondaryButtonStyle),
+                padding: '6px 14px', fontSize: '10px',
+              }}
+            >
+              2D MAP
+            </button>
+          </div>
+
           {/* Connection indicator — always visible, never implied by the
               presence of the panel itself */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -482,33 +526,40 @@ export default function App() {
             </label>
           </div>
           <div style={{ marginBottom: '10px' }}>
-            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
-              Grace window (s)
-              <input
-                type="number" min={1} max={10} step={0.5} value={graceWindowInput}
-                disabled={!isLive}
-                onChange={(e) => setGraceWindowInput(clamp(parseFloat(e.target.value), 1, 10))}
-                style={numberInputStyle}
-              />
+            <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Grace window</span>
+              <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{graceWindowInput.toFixed(1)}s</span>
             </label>
+            <input
+              type="range" min={1} max={10} step={0.5} value={graceWindowInput}
+              disabled={!isLive}
+              onChange={(e) => setGraceWindowInput(clamp(parseFloat(e.target.value), 1, 10))}
+              style={rangeInputStyle}
+            />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
-              Min packet (bytes)
+              <span style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Min packet</span>
+                <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{minPacketInput}B</span>
+              </span>
               <input
-                type="number" min={64} max={1500} value={minPacketInput}
+                type="range" min={64} max={1500} value={minPacketInput}
                 disabled={!isLive}
                 onChange={(e) => setMinPacketInput(clamp(parseInt(e.target.value, 10), 64, 1500))}
-                style={numberInputStyle}
+                style={rangeInputStyle}
               />
             </label>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
-              Max packet (bytes)
+              <span style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Max packet</span>
+                <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{maxPacketInput}B</span>
+              </span>
               <input
-                type="number" min={64} max={1500} value={maxPacketInput}
+                type="range" min={64} max={1500} value={maxPacketInput}
                 disabled={!isLive}
                 onChange={(e) => setMaxPacketInput(clamp(parseInt(e.target.value, 10), 64, 1500))}
-                style={numberInputStyle}
+                style={rangeInputStyle}
               />
             </label>
           </div>
@@ -523,11 +574,22 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main 3D viewport — its own grid cell, so nothing floats over it.
-          The connecting/disconnected overlay is scoped to this cell only. */}
+      {/* Main viewport — its own grid cell, so nothing floats over it. The
+          connecting/disconnected overlay is scoped to this cell only.
+          viewMode swaps between the 3D <Canvas> scene and the 2D
+          TopologyMap; both consume the exact same flows/requestEvents
+          state from the same useSimulationSocket() call above. */}
       <div style={{ gridArea: 'main', position: 'relative' }}>
         {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
 
+        {viewMode === '2d' ? (
+          <TopologyMap
+            flows={flows}
+            selectedServerId={selectedServerId}
+            onSelectServer={setSelectedServerId}
+            activeRequestEvents={activeRequestEvents}
+          />
+        ) : (
         <Canvas camera={{ position: [0, 10, 16], fov: 50 }}>
         <color attach="background" args={[colors.bgDeep]} />
 
@@ -590,6 +652,14 @@ export default function App() {
           </group>
         ))}
 
+        {/* Discrete, user-triggered requests — visually distinct from the
+            ambient CP/DP packets above (brighter, larger, ends in an
+            explicit outcome label), one per real request_event still
+            within its active animation window. */}
+        {activeRequestEvents.map(active => (
+          <RequestPacket key={active.event.id} active={active} nodePositions={nodePositions} />
+        ))}
+
         <OrbitControls
             makeDefault
             autoRotate={true}
@@ -604,6 +674,7 @@ export default function App() {
             <Bloom luminanceThreshold={1} mipmapBlur intensity={1.5} />
         </EffectComposer>
         </Canvas>
+        )}
       </div>
 
       {/* Right sidebar — status summary, per-server status grid + detail,
@@ -641,7 +712,17 @@ export default function App() {
           <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
         </div>
 
-        <ServerDetailCard flow={selectedFlow} isLive={isLive} onRemediate={triggerRemediate} />
+        <ServerDetailCard
+          flow={selectedFlow}
+          isLive={isLive}
+          onRemediate={triggerRemediate}
+          onSendRequest={triggerSendRequest}
+        />
+
+        {/* Full per-flow metadata + request history — every field here
+            already comes from a real FlowSnapshot/RequestEvent flowing
+            through useSimulationSocket, nothing computed client-side. */}
+        <AnalysisPanel flow={selectedFlow} rootCauses={rootCauses} requestEvents={requestEvents} />
 
         {/* Real output of verify/correlator.py (already tested in
             planesplit/tests/test_correlator.py) — only appears when 2+

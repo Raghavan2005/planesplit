@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react'
 import type { FlowSnapshot } from '../../hooks/useSimulationSocket'
+import type { ActiveRequestEvent } from '../../hooks/useActiveRequestEvents'
 import { nodeKindFor, statusForNode, isResponsibleForActiveFault, type NodeKind, type NodeStatus } from '../topologyStatus'
-import { colors, status as STATUS_COLOR, nodeKindColor, font } from '../../theme'
-import { computeMapPositions, collectEdges, realHops, type MapPositions } from './mapLayout'
+import { colors, status as STATUS_COLOR, nodeKindColor, requestStatusColor, requestStatusLabel, font } from '../../theme'
+import { computeMapPositions, collectEdges, realHops, pointAlongHops, type MapPositions } from './mapLayout'
 
 // 2D counterpart to the 3D scene (App.tsx's <Canvas> + scene/* components) --
 // same real per-node status (statusForNode/isResponsibleForActiveFault,
@@ -15,9 +17,10 @@ interface TopologyMapProps {
   flows: FlowSnapshot[]
   selectedServerId: string | null
   onSelectServer: (serverId: string) => void
+  activeRequestEvents: ActiveRequestEvent[]
 }
 
-export function TopologyMap({ flows, selectedServerId, onSelectServer }: TopologyMapProps) {
+export function TopologyMap({ flows, selectedServerId, onSelectServer, activeRequestEvents }: TopologyMapProps) {
   if (flows.length === 0) {
     return (
       <div style={{
@@ -69,6 +72,14 @@ export function TopologyMap({ flows, selectedServerId, onSelectServer }: Topolog
             isSelected={id === selectedServerId}
             onSelect={nodeKindFor(id) === 'server' ? () => onSelectServer(id) : undefined}
           />
+        ))}
+
+        {/* Discrete, user-triggered requests -- visually distinct from the
+            ambient dots above (brighter, larger, pulsing while in flight,
+            ends in an explicit outcome label) and drawn last so they're
+            never occluded by a node or an ambient dot. */}
+        {activeRequestEvents.map((active) => (
+          <RequestMarker key={active.event.id} active={active} positions={positions} />
         ))}
       </svg>
     </div>
@@ -150,6 +161,62 @@ function MapNode({ id, point, kind, status, isFaultOrigin, isSelected, onSelect 
       <text y={kind === 'server' ? 40 : 34} textAnchor="middle" fontSize={11} fill={colors.textSecondary} fontFamily={font.sans}>
         {id}
       </text>
+    </g>
+  )
+}
+
+// How long a discrete request_event's marker takes to travel its real path
+// on screen. Purely a visual pace -- the backend result (delivered/
+// diverged/dropped) is already final and known the instant the event
+// arrives; this only controls how long the "travelling" phase reads before
+// the outcome label appears at its real final position.
+const TRAVEL_DURATION_MS = 1400
+
+function RequestMarker({ active, positions }: { active: ActiveRequestEvent; positions: MapPositions }) {
+  // A local per-frame tick, not derived from props -- this marker's
+  // position depends on wall-clock elapsed time since it was first seen,
+  // which changes every animation frame regardless of whether any parent
+  // prop (flows, requestEvents) has changed in that same window.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const loop = () => {
+      setTick((t) => t + 1)
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const { event, firstSeenAt } = active
+  // Delivered means cp_trace/dp_trace already agree, so either is fine;
+  // diverged/dropped travel the real OBSERVED (dp_trace) path, since that's
+  // what actually happened, including where a dropped packet really
+  // stopped -- not the intended path it never fully took.
+  const path = event.status === 'delivered' ? event.cp_trace : event.dp_trace
+  const hops = realHops(path, positions)
+  if (hops.length === 0) return null
+
+  const progress = Math.min(1, (performance.now() - firstSeenAt) / TRAVEL_DURATION_MS)
+  const point = pointAlongHops(hops, positions, progress)
+  if (!point) return null
+
+  const color = requestStatusColor[event.status]
+  const arrived = progress >= 1
+
+  return (
+    <g>
+      <circle cx={point.x} cy={point.y} r={arrived ? 7 : 5.5} fill={color} stroke="#ffffff" strokeWidth={1.5}>
+        {!arrived && <animate attributeName="opacity" values="1;0.45;1" dur="0.35s" repeatCount="indefinite" />}
+      </circle>
+      {arrived && (
+        <text
+          x={point.x} y={point.y - 18} textAnchor="middle" fontSize={10} fontWeight="bold"
+          fill={color} fontFamily={font.sans}
+        >
+          {requestStatusLabel[event.status]}
+        </text>
+      )}
     </g>
   )
 }
