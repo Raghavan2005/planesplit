@@ -32,6 +32,7 @@ import { ServerDetailCard } from './components/ui/ServerDetailCard'
 import { AnalysisPanel } from './components/ui/AnalysisPanel'
 import { LiveConsole } from './components/ui/LiveConsole'
 import { AlertToasts } from './components/ui/AlertToasts'
+import { AlertHistory } from './components/ui/AlertHistory'
 import {
   colors,
   font,
@@ -164,6 +165,19 @@ export default function App() {
   const [toasts, setToasts] = useState([])
   const toastIdRef = useRef(0)
 
+  // Persistent alert history — unlike the ephemeral 7s toast above, these
+  // rows stay until the cap (30, newest first) evicts them, so a judge can
+  // scroll back through everything that happened this session instead of
+  // only whatever fired in the last 7 seconds. Pushed from the exact same
+  // real status-transition check as the toast below (never a second,
+  // independent detection mechanism) — same synchronous-id-capture pattern
+  // as toastIdRef/logIdRef, for the same reason: ids must be read at call
+  // time, not lazily inside the state updater, or batched transitions in
+  // the same tick would collide on the same id.
+  const [alertHistory, setAlertHistory] = useState([])
+  const alertHistoryIdRef = useRef(0)
+  const ALERT_HISTORY_LIMIT = 30
+
   // Logs "connected"/"disconnected" purely from connectionStatus's own
   // transitions (not from inside the hook, which owns transport only).
   const prevConnectionStatusRef = useRef(connectionStatus)
@@ -191,10 +205,18 @@ export default function App() {
           logEvent(f.server_id, `status: ${prev.status} → ${f.status}${detail}`)
         }
         if (prev && prev.status !== 'alert' && f.status === 'alert') {
+          const nowTime = new Date().toLocaleTimeString([], { hour12: false })
           toastIdRef.current += 1
           const toastId = toastIdRef.current
-          setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: new Date().toLocaleTimeString([], { hour12: false }) }])
+          setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: nowTime }])
           setTimeout(() => setToasts(ts => ts.filter(t => t.id !== toastId)), 7000)
+
+          alertHistoryIdRef.current += 1
+          const historyId = alertHistoryIdRef.current
+          setAlertHistory(hs => {
+            const next = [{ id: historyId, server_id: f.server_id, reason: f.reason || 'divergence detected', fault_node: f.fault_node, time: nowTime, detectedAt: f.detected_at }, ...hs]
+            return next.length > ALERT_HISTORY_LIMIT ? next.slice(0, ALERT_HISTORY_LIMIT) : next
+          })
         }
       })
     }
@@ -363,8 +385,6 @@ export default function App() {
       gridTemplateAreas: `"header header header" "left main right" "console console console"`,
     }}>
 
-      <AlertToasts toasts={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
-
       {/* Header — title/subtitle on the left, connection status + sponsor
           logo on the right. Nothing here overlaps the 3D viewport: it's
           its own grid row, not an absolutely-positioned overlay. */}
@@ -426,10 +446,10 @@ export default function App() {
             </span>
           </div>
           <div style={{
-            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '10px', padding: '6px 12px',
-            boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)',
+            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '8px', padding: '5px 10px',
+            boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)', display: 'flex', alignItems: 'center',
           }}>
-            <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '24px', display: 'block' }} />
+            <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '38px', display: 'block' }} />
           </div>
         </div>
       </div>
@@ -440,6 +460,7 @@ export default function App() {
       <div style={{
         gridArea: 'left', padding: '12px', minHeight: 0,
         display: 'flex', flexDirection: 'column', gap: '8px',
+        overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         {/* Fault target scope — 'all' (historical default) injects into
@@ -582,6 +603,7 @@ export default function App() {
           state from the same useSimulationSocket() call above. */}
       <div style={{ gridArea: 'main', position: 'relative' }}>
         {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
+        <AlertToasts toasts={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
 
         {viewMode === '2d' ? (
           <TopologyMap
@@ -683,7 +705,14 @@ export default function App() {
           the left sidebar and the 3D viewport. */}
       <div style={{
         gridArea: 'right', padding: '12px', minHeight: 0,
-        display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden',
+        // 6px, not 8px: with AlertHistory added as a new fixed-height
+        // section, this small trim is part of what keeps AnalysisPanel's
+        // own flexible request-history area from being squeezed to zero at
+        // the real 1536x864 demo viewport under a live alert (confirmed via
+        // a DOM height check, not a guess) — see AnalysisPanel's panelStyle
+        // comment for the matching trim on its own internal gap.
+        display: 'flex', flexDirection: 'column', gap: '6px',
+        overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         {/* Roster count + overall status combined into one row instead of a
@@ -719,15 +748,26 @@ export default function App() {
           />
         </div>
 
+        <AlertHistory entries={alertHistory} onSelect={setSelectedServerId} selectedServerId={selectedServerId} />
+
         {/* Full per-flow metadata + request history — every field here
             already comes from a real FlowSnapshot/RequestEvent flowing
-            through useSimulationSocket, nothing computed client-side. Given
-            flex-grow + minHeight: 0, this is the one panel allowed to
-            absorb/shrink with whatever vertical space the fixed-size
-            sections above and below leave it — its own internal request
-            history list is what adapts (see AnalysisPanel), not a scrollbar
-            on this wrapper. */}
-        <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
+            through useSimulationSocket, nothing computed client-side.
+            Deliberately no `minHeight: 0` override here (unlike the
+            left/right sidebars' own scroll containers): with `minHeight: 0`
+            a flex item can be shrunk by its siblings all the way down to 0,
+            which is exactly what happened once Alert History + Agent Review
+            (both real, needed content) pushed AnalysisPanel's fixed-size
+            siblings past this row's naturally-allocated height — verified
+            live with a DOM height probe: the request-history section was
+            being squeezed to literal 0px, not just scrolled off-screen, so
+            "No requests sent yet." / real DIVERGED/DELIVERED rows silently
+            never rendered at all. Leaving `minHeight` at its flexbox default
+            ("auto") means this row instead takes whatever its content
+            actually needs; the *sidebar itself* (already `overflowY: auto`)
+            is what absorbs any resulting overflow via a real, visible
+            scrollbar instead of invisible content loss. */}
+        <div style={{ flex: '1 1 auto', display: 'flex' }}>
           <AnalysisPanel flow={selectedFlow} rootCauses={rootCauses} requestEvents={requestEvents} />
         </div>
 
