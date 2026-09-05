@@ -5,10 +5,14 @@ export interface Toast {
   time: string
 }
 
-// Floating alert toasts — pushed by App()'s flows-diffing effect the
-// instant a server's real status transitions into 'alert' (not a
-// simulated/hardcoded notification). Fixed-positioned so it floats above
-// every grid cell regardless of where it's mounted in the DOM.
+// Alert toasts — pushed by App()'s flows-diffing effect the instant a
+// server's real status transitions into 'alert' (not a simulated/hardcoded
+// notification). Absolutely positioned within the 'main' viewport cell
+// (which has position: relative) rather than fixed over the whole page —
+// same scoping ConnectingOverlay uses — so a fired alert floats over the
+// open 3D/2D viewport instead of covering the right sidebar's interactive
+// controls (server tiles, REMEDIATE/SEND REQUEST buttons), which a
+// page-fixed z-index:999 stack previously did.
 interface AlertToastsProps {
   toasts: Toast[]
   onDismiss: (id: number) => void
@@ -18,8 +22,9 @@ export function AlertToasts({ toasts, onDismiss }: AlertToastsProps) {
   if (toasts.length === 0) return null
   return (
     <div style={{
-      position: 'fixed', top: '84px', right: '20px', zIndex: 999,
+      position: 'absolute', top: '12px', right: '12px', zIndex: 30,
       display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '320px',
+      pointerEvents: 'none',
     }}>
       {toasts.map(t => (
         <div key={t.id} style={{
@@ -27,6 +32,7 @@ export function AlertToasts({ toasts, onDismiss }: AlertToastsProps) {
           background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)',
           boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.5)', color: '#f8fafc',
           display: 'flex', alignItems: 'flex-start', gap: '10px',
+          pointerEvents: 'auto',
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
