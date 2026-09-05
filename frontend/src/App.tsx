@@ -28,6 +28,7 @@ import {
   secondaryButtonStyle,
   numberInputStyle,
 } from './theme'
+import { useSimulationSocket } from './hooks/useSimulationSocket'
 
 // Fixed ingress tier: shared by every server regardless of scale.
 // Backend servers (from data.flows[].server_id) are laid out procedurally
@@ -353,8 +354,8 @@ function ConnectingOverlay({ connectionStatus }) {
         </div>
         <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px', maxWidth: '260px' }}>
           {isRetrying
-            ? 'Retrying every 2s. No simulated state is shown until a real snapshot arrives.'
-            : 'Waiting for the first real network snapshot over ws://localhost:8000/ws.'}
+            ? 'Reconnecting — backend disconnected. No simulated state is shown until a real snapshot arrives.'
+            : 'Waiting for the first real network snapshot from the backend.'}
         </div>
       </div>
     </div>
@@ -448,7 +449,7 @@ function ServerDetailCard({ flow }) {
 // backend snapshots, plus the literal actions this UI sends (fault
 // injections, scale/reset requests, connection lifecycle). Nothing here is
 // synthesized to look like activity; every line traces back to an actual
-// state change or an actual ws.send() call (see App()'s WS handler and
+// state change or an actual send() call (see useSimulationSocket and
 // trigger* functions). `filterTag` scopes the view to `system` lines plus
 // whichever server is currently selected, so switching the selected tile
 // switches what's being tailed.
@@ -540,19 +541,15 @@ const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
 const clamp = (n, min, max) => Math.max(min, Math.min(max, Number.isFinite(n) ? n : min))
 
 export default function App() {
-  // One entry per backend server/flow — see backend/state.py's
-  // FlowSnapshot. Always has at least one entry (the default, unscaled
-  // "Server" leg), so nothing here needs a placeholder single-flow shape
-  // of its own.
-  const [flows, setFlows] = useState([{
-    server_id: 'Server', flow: '10.0.1.0/24',
-    cp_trace: ['Users', 'Firewall', 'Server'], dp_trace: ['Users', 'Firewall', 'Server'],
-    status: 'synced', fault_node: null, reason: null,
-  }])
-  // Populated only when 2+ flows share a responsible_router — real output
-  // of planesplit's already-tested verify/correlator.py, not computed here.
-  const [rootCauses, setRootCauses] = useState([])
-  const [numUsers, setNumUsers] = useState(1)
+  // Transport (connection, raw flows/rootCauses/numUsers, request-event
+  // history, backend-surfaced errors) is fully owned by this hook — see
+  // hooks/useSimulationSocket.ts. App() itself only derives UI state from
+  // what it returns.
+  const {
+    flows, rootCauses, numUsers, connectionStatus, hasSnapshot,
+    requestEvents, lastError, send,
+  } = useSimulationSocket()
+
   // What the user has typed into the config fields — not yet applied until
   // "APPLY CONFIG" is clicked, so typing doesn't rebuild the network (and
   // reset every flow's grace-window state) on every keystroke.
@@ -576,18 +573,6 @@ export default function App() {
   // ('selected') — sent to the backend as target_server_id alongside the
   // fault kind.
   const [faultScope, setFaultScope] = useState('all') // 'all' | 'selected'
-  const [ws, setWs] = useState(null)
-  // 'connecting' | 'open' | 'closed' — reflects the actual WebSocket
-  // lifecycle, not assumed. hasSnapshot additionally tracks whether a real
-  // state message has ever arrived from the backend, since 'open' alone
-  // doesn't mean the backend has told us anything yet: the CP/DP trace and
-  // status shown before that point would otherwise be the hardcoded React
-  // defaults above, displayed as if they were live backend state. That's
-  // exactly the "UI shows state the backend never confirmed" failure
-  // CLAUDE.md rules out — so nothing but the loading/disconnected overlay
-  // renders until hasSnapshot is true.
-  const [connectionStatus, setConnectionStatus] = useState('connecting')
-  const [hasSnapshot, setHasSnapshot] = useState(false)
   // Which server's detail card is shown in the right sidebar's status
   // grid. Reconciled below whenever `flows` changes so a reset/rescale
   // that removes the previously-selected server falls back to the first
@@ -595,7 +580,7 @@ export default function App() {
   // longer exists.
   const [selectedServerId, setSelectedServerId] = useState(null)
   // Real event feed for LiveConsole — every entry traces back to an actual
-  // snapshot diff or an actual ws.send() call below, never synthesized.
+  // snapshot diff or an actual send() call below, never synthesized.
   // Capped at 300 so a long demo session doesn't grow this unbounded.
   const [logs, setLogs] = useState([])
   const logIdRef = useRef(0)
@@ -628,94 +613,64 @@ export default function App() {
   const [toasts, setToasts] = useState([])
   const toastIdRef = useRef(0)
 
+  // Logs "connected"/"disconnected" purely from connectionStatus's own
+  // transitions (not from inside the hook, which owns transport only).
+  const prevConnectionStatusRef = useRef(connectionStatus)
   useEffect(() => {
-    let cancelled = false
-    let socket = null
-    let retryTimer = null
+    if (prevConnectionStatusRef.current !== connectionStatus) {
+      if (connectionStatus === 'open') logEvent('system', 'connected to backend')
+      if (connectionStatus === 'closed') logEvent('system', 'disconnected — reconnecting')
+    }
+    prevConnectionStatusRef.current = connectionStatus
+  }, [connectionStatus])
 
-    const connect = () => {
-      if (cancelled) return
-      setConnectionStatus('connecting')
-      socket = new WebSocket('ws://localhost:8000/ws')
-
-      socket.onopen = () => {
-        if (cancelled) return
-        setConnectionStatus('open')
-        logEvent('system', 'connected to backend')
-      }
-
-      socket.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-        if (data.type === 'state') {
-          setFlows(data.flows)
-          setRootCauses(data.root_causes || [])
-          setNumUsers(data.num_users || 1)
-          setHasSnapshot(true)
-
-          // Diff against the previous snapshot for real per-server status
-          // transitions. Only when the server roster is unchanged — a
-          // scale/reset legitimately swaps the whole roster and would
-          // otherwise produce a meaningless burst of "new server" noise
-          // (that's already logged once, directly, by the trigger*
-          // functions below).
-          const prevFlows = prevFlowsRef.current
-          const prevById = Object.fromEntries(prevFlows.map(f => [f.server_id, f]))
-          const sameRoster = prevFlows.length === data.flows.length && data.flows.every(f => prevById[f.server_id])
-          if (sameRoster) {
-            data.flows.forEach(f => {
-              const prev = prevById[f.server_id]
-              if (prev && prev.status !== f.status) {
-                const detail = f.status === 'alert' && f.fault_node ? ` (diverged at ${f.fault_node})` : ''
-                logEvent(f.server_id, `status: ${prev.status} → ${f.status}${detail}`)
-              }
-              if (prev && prev.status !== 'alert' && f.status === 'alert') {
-                toastIdRef.current += 1
-                const toastId = toastIdRef.current
-                setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: new Date().toLocaleTimeString([], { hour12: false }) }])
-                setTimeout(() => setToasts(ts => ts.filter(t => t.id !== toastId)), 7000)
-              }
-            })
-          }
-          prevFlowsRef.current = data.flows
-
-          const hasRootCause = (data.root_causes || []).length > 0
-          if (hasRootCause && !prevHasRootCauseRef.current) {
-            const total = data.root_causes.reduce((n, rc) => n + rc.flows.length, 0)
-            const routers = data.root_causes.map(rc => rc.responsible_router).join(', ')
-            logEvent('system', `correlated ${total} alerts under ${routers}`)
-          }
-          prevHasRootCauseRef.current = hasRootCause
+  // Every log line / toast here traces back to a real transition between
+  // two consecutive backend snapshots — this effect is purely a derived
+  // side effect of `flows` changing, decoupled from the transport itself
+  // (see useSimulationSocket, which only owns the connection).
+  useEffect(() => {
+    const prevFlows = prevFlowsRef.current
+    const prevById = Object.fromEntries(prevFlows.map(f => [f.server_id, f]))
+    const sameRoster = prevFlows.length === flows.length && flows.every(f => prevById[f.server_id])
+    if (sameRoster) {
+      flows.forEach(f => {
+        const prev = prevById[f.server_id]
+        if (prev && prev.status !== f.status) {
+          const detail = f.status === 'alert' && f.fault_node ? ` (diverged at ${f.fault_node})` : ''
+          logEvent(f.server_id, `status: ${prev.status} → ${f.status}${detail}`)
         }
-      }
-
-      socket.onclose = () => {
-        if (cancelled) return
-        setConnectionStatus('closed')
-        setHasSnapshot(false)
-        logEvent('system', 'disconnected — retrying in 2s')
-        // The backend's tick loop and dev-server restarts are the normal
-        // reasons a socket drops in this project (no auth/session to
-        // re-establish) — retrying on a short fixed delay is enough,
-        // rather than leaving the UI permanently stuck showing
-        // "disconnected" until a manual page reload.
-        retryTimer = setTimeout(connect, 2000)
-      }
-
-      socket.onerror = () => {
-        socket.close()
-      }
-
-      setWs(socket)
+        if (prev && prev.status !== 'alert' && f.status === 'alert') {
+          toastIdRef.current += 1
+          const toastId = toastIdRef.current
+          setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: new Date().toLocaleTimeString([], { hour12: false }) }])
+          setTimeout(() => setToasts(ts => ts.filter(t => t.id !== toastId)), 7000)
+        }
+      })
     }
+    prevFlowsRef.current = flows
+  }, [flows])
 
-    connect()
-
-    return () => {
-      cancelled = true
-      if (retryTimer) clearTimeout(retryTimer)
-      if (socket) socket.close()
+  useEffect(() => {
+    const hasRootCause = rootCauses.length > 0
+    if (hasRootCause && !prevHasRootCauseRef.current) {
+      const total = rootCauses.reduce((n, rc) => n + rc.flows.length, 0)
+      const routers = rootCauses.map(rc => rc.responsible_router).join(', ')
+      logEvent('system', `correlated ${total} alerts under ${routers}`)
     }
-  }, [])
+    prevHasRootCauseRef.current = hasRootCause
+  }, [rootCauses])
+
+  // Surfaces backend-rejected actions (invalid remediate/send_request
+  // targets, malformed payloads) — without this, a rejected action would
+  // fail completely silently, which is exactly the "black box" failure
+  // mode this project's own rules warn against.
+  const prevErrorRef = useRef(null)
+  useEffect(() => {
+    if (lastError && lastError !== prevErrorRef.current) {
+      logEvent('system', `error: ${lastError}`)
+    }
+    prevErrorRef.current = lastError
+  }, [lastError])
 
   const isLive = connectionStatus === 'open' && hasSnapshot
 
@@ -724,7 +679,7 @@ export default function App() {
     setRequestedFault(fault)
     const target = faultScope === 'selected' ? selectedServerId : null
     logEvent('system', fault === 'none' ? 'route update requested (sync)' : `fault injected: ${fault}${target ? ` (target: ${target})` : ' (all servers)'}`)
-    ws.send(JSON.stringify({ action: 'update_route', fault, target_server_id: target }))
+    send({ action: 'update_route', fault, target_server_id: target })
   }
 
   const triggerReset = () => {
@@ -733,7 +688,7 @@ export default function App() {
     setServerInput(1)
     setUserInput(1)
     logEvent('system', 'network reset')
-    ws.send(JSON.stringify({ action: 'reset' }))
+    send({ action: 'reset' })
   }
 
   // Applies exactly what's in the config fields — clamped client-side to
@@ -751,10 +706,10 @@ export default function App() {
     setGraceWindowInput(graceWindow); setMinPacketInput(minPacket); setMaxPacketInput(maxPacket)
     setRequestedFault('none')
     logEvent('system', `scaled to ${servers} servers, ${users} users, grace window ${graceWindow}s, packet size ${minPacket}-${maxPacket}B`)
-    ws.send(JSON.stringify({
+    send({
       action: 'scale', num_servers: servers, num_users: users,
       grace_window_seconds: graceWindow, min_packet_size: minPacket, max_packet_size: maxPacket,
-    }))
+    })
   }
 
   // One click: a random topology size (servers + users, within the same
@@ -772,8 +727,8 @@ export default function App() {
     setUserInput(users)
     setRequestedFault(fault)
     logEvent('system', `randomized — ${servers} servers, ${users} users, fault=${fault}`)
-    ws.send(JSON.stringify({ action: 'scale', num_servers: servers, num_users: users }))
-    ws.send(JSON.stringify({ action: 'update_route', fault }))
+    send({ action: 'scale', num_servers: servers, num_users: users })
+    send({ action: 'update_route', fault, target_server_id: null })
   }
 
   // Applies a fixed, named topology + fault combination in one click — for
@@ -789,8 +744,8 @@ export default function App() {
     setRequestedFault(preset.fault)
     setFaultScope('all')
     logEvent('system', `preset applied: ${preset.label}`)
-    ws.send(JSON.stringify({ action: 'scale', num_servers: preset.num_servers, num_users: preset.num_users }))
-    ws.send(JSON.stringify({ action: 'update_route', fault: preset.fault, target_server_id: null }))
+    send({ action: 'scale', num_servers: preset.num_servers, num_users: preset.num_users })
+    send({ action: 'update_route', fault: preset.fault, target_server_id: null })
   }
 
   // The only router this demo ever mutates is "Users" — the per-node fault
