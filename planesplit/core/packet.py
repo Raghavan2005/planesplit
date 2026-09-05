@@ -1,2 +1,9 @@
-# Agent 1 (WS1) — see docs/BUILD_PLAN.md §0 for the frozen signature.
-# Stub only: Packet dataclass (src, dst, trace) not yet implemented.
+from dataclasses import dataclass, field
+from ipaddress import IPv4Address
+
+
+@dataclass
+class Packet:
+    src: IPv4Address
+    dst: IPv4Address
+    trace: list[str] = field(default_factory=list)
