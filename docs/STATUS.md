@@ -2,10 +2,10 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (M4 complete — CLI demo working, repeatability proven; M0-M4 all done)
+**Last updated:** 2026-09-05 (verification pass complete — REQUIREMENTS.md re-checked against actual code, R7 boundary test gap closed, git history cleaned of Claude attribution)
 
 ## Current phase
-M4 (CLI Demo + Test Suite Hardening) complete. The project is now a complete, PS-compliant submission per `docs/MILESTONES.md`'s own definition ("a project that stops at M4 with a fully green test suite and a working CLI demo is a complete, PS-compliant submission"). M5 (polish/stretch: README, demo rehearsal, optional web viz) is next if time remains — explicitly optional.
+M0–M4 complete and independently re-verified: every R1–R13 row in `docs/REQUIREMENTS.md` was re-checked against the actual implementation/test suite (not just re-asserted) and updated from stale "Planned" to "Done" with real file/test references. One genuine gap was found in that pass — R7 called for an explicit grace-window boundary test (`window_end ± ε`) that had never been written — and was fixed immediately (3 new tests in `test_verifier.py`). M5 (polish/stretch) remains optional; a narrative hook and README are already done (see below).
 
 ## Done
 - Problem statement selected and locked: PS31 PlaneSplit (`ps.md`, `docs/DECISION.md`).
@@ -22,19 +22,20 @@ M4 (CLI Demo + Test Suite Hardening) complete. The project is now a complete, PS
 
 - **M4 (CLI Demo + Test Suite Hardening)**: `scenarios/definitions.py` — shared, deterministic scenario functions (one per `TEST_PLAN.md` scenario, each building a fresh pipeline internally) used by both `cli/demo.py` and `tests/test_repeatability.py`, the single source of truth `docs/BUILD_PLAN.md` §0 calls for. `cli/demo.py` — `rich`-based CLI (`python -m planesplit.cli.demo [--all | --scenario N]`), color-coded PASS/TOLERATED/ALERT table plus a detailed alert reason printout. `tests/test_repeatability.py` proves R13: every scenario run twice produces byte-identical results (field-by-field comparison, since `Alert` isn't directly `==`-comparable). Manually verified the full `--all` demo run twice via redirected output and diffed byte-for-byte identical. Fixed a UX bug caught during manual testing: `--scenario N` was indexing into `ALL_SCENARIOS`' *run order* (which starts with Scenario 4) instead of the scenario's own `TEST_PLAN.md` number — added a separate `SCENARIO_BY_NUMBER` mapping so `--scenario 3` actually runs Scenario 3. Full suite: 26/26 passing.
 
-## In progress
-Nothing — M4 gate met (all tests green, CLI demo runs clean and repeatably). M0-M4 complete.
+- **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, architecture diagram, scenario table, doc index). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset). `cli/demo.py` now opens with a "Why this matters" panel and closes with a "What you just saw" panel, resolving the last unactioned `docs/DEMO.md` jury comment (narrative hook + styling) — the hook deliberately avoids citing any specific unverified incident, per CLAUDE.md §4/§8, and frames the general, documented failure class instead. 3 new CLI smoke tests.
+- **Repo hygiene**: all 12 commits rewritten to remove `Co-Authored-By: Claude` trailers (GitHub was showing Claude as a co-author) and to use the git author email that matches the GitHub account, so commits link to the correct profile. History was force-pushed after a local backup tag; verified via the GitHub API that every commit now shows `author_login: Raghavan2005` with no Claude attribution. Added `CLAUDE.md` §50: no commit may include an AI-attribution footer going forward.
+- **Requirements verification pass**: every R1–R13 and Q1 row in `docs/REQUIREMENTS.md` re-checked against the real codebase and updated from "Planned" to "Done" with actual file/test citations (not planning-time references). Found and closed one real gap: R7's explicit boundary-condition test (`window_end - ε` tolerated, `window_end + ε` and exactly `window_end` alert) had never been written — added as 3 new tests in `test_verifier.py`.
 
-- **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, architecture diagram, scenario table, doc index). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset). `cli/demo.py` now opens with a "Why this matters" panel and closes with a "What you just saw" panel, resolving the last unactioned `docs/DEMO.md` jury comment (narrative hook + styling) — the hook deliberately avoids citing any specific unverified incident, per CLAUDE.md §4/§8, and frames the general, documented failure class instead. 3 new CLI smoke tests. Full suite: 29/29 passing.
+## In progress
+Nothing. M0–M4 complete, independently re-verified against actual code (not just re-asserted from memory).
 
 ## Next up
 Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
 
 ## Known gaps / not yet covered
-- `TEST_PLAN.md` doesn't yet cover malformed/empty input or duplicate/out-of-order probes — deferred; the scenario-definition format is now settled (M4), so this could be picked up next if time allows, but it's not gating anything.
+- `TEST_PLAN.md` doesn't yet cover malformed/empty input or duplicate/out-of-order probes (tracked as Q2 in `docs/REQUIREMENTS.md`) — the scenario-definition format is settled, so this could be picked up if time allows, but it's not gating anything.
 - Web visualization is stretch-only (M5) and may not be attempted at all if time runs short — this is the planned outcome, not a shortfall.
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
-- No `README.md` yet at the repo root — deferred to M5.
 
 ## Test status
-29/29 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`). No failures, no skips. CLI demo (`python -m planesplit.cli.demo --all`) manually verified to run clean and produce identical output across two separate runs, and manually eyeballed with the new hook/closing panels via `--scenario 2`.
+32/32 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py` [including 3 new R7 boundary tests], `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`). No failures, no skips. Working tree clean; local `master` confirmed identical to `origin/master` after the history rewrite and force-push.
