@@ -427,3 +427,24 @@ def test_send_request_log_clears_on_rescale():
     assert len(sim._request_log) == 1
     sim.scale(2, 2)
     assert sim._request_log == []
+
+
+def test_snapshot_to_dict_includes_recent_requests():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    assert sim.snapshot().to_dict()["recent_requests"] == []
+
+    event = sim.send_request("Server")
+    snap_dict = sim.snapshot().to_dict()
+    assert snap_dict["recent_requests"] == [event.to_dict()]
+
+
+def test_snapshot_recent_requests_caps_at_twenty_even_with_a_larger_log():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    for _ in range(30):
+        sim.send_request("Server")
+    snap_dict = sim.snapshot().to_dict()
+    assert len(snap_dict["recent_requests"]) == 20
+    # most recent last, matching self._request_log's own append order
+    assert snap_dict["recent_requests"][-1]["id"] == sim._request_log[-1].id

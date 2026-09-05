@@ -145,6 +145,7 @@ class Snapshot:
     flows: list[FlowSnapshot]
     root_causes: list[dict]
     num_users: int
+    recent_requests: list["RequestEvent"]
 
     # Backward-compatible single-flow view, always mirroring flows[0] (the
     # "Server"/FLOW leg). Every action this backend supported before
@@ -182,6 +183,7 @@ class Snapshot:
             "flows": [f.to_dict() for f in self.flows],
             "root_causes": self.root_causes,
             "num_users": self.num_users,
+            "recent_requests": [r.to_dict() for r in self.recent_requests],
         }
 
 
@@ -520,4 +522,9 @@ class SimulationState:
             if r.is_correlated
         ]
 
-        return Snapshot(flows=flow_snapshots, root_causes=root_causes, num_users=len(self.user_ips))
+        return Snapshot(
+            flows=flow_snapshots,
+            root_causes=root_causes,
+            num_users=len(self.user_ips),
+            recent_requests=self._request_log[-_RECENT_REQUESTS_IN_SNAPSHOT:],
+        )
