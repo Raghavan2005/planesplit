@@ -31,14 +31,16 @@ import hashlib
 import time
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
-from typing import Callable, Optional
+from typing import Callable, Literal, Optional
+from uuid import uuid4
 
 from planesplit.core.control_plane import ControlPlaneManager
 from planesplit.core.network import Network
+from planesplit.core.packet import Packet
 from planesplit.core.router import Router
 from planesplit.faults.update_channel import FaultMode, InjectedFault, UpdateChannel
 from planesplit.verify.correlator import correlate
-from planesplit.verify.prober import probe_flow
+from planesplit.verify.prober import boundary_probe_address, probe_flow
 from planesplit.verify.remediator import Remediator
 from planesplit.verify.verifier import Alert, Verifier
 
@@ -183,6 +185,44 @@ class Snapshot:
         }
 
 
+@dataclass
+class RequestEvent:
+    """One discrete, user-caused probe -- as opposed to the ambient traffic
+    `snapshot()` computes on every tick. Produced by SimulationState.send_
+    request() from a real probe_flow()+Verifier.check()+Network.delivered()
+    call chain, exactly like ambient traffic, but individually identified,
+    timestamped, and reported as its own event rather than folded into a
+    periodic status average.
+    """
+    id: str
+    server_id: str
+    flow: str
+    sent_at: float
+    cp_trace: list[str]
+    dp_trace: list[str]
+    status: Literal["delivered", "diverged", "dropped"]
+    reason: Optional[str]
+    packet_size_bytes: int
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "request_event",
+            "id": self.id,
+            "server_id": self.server_id,
+            "flow": self.flow,
+            "sent_at": self.sent_at,
+            "cp_trace": self.cp_trace,
+            "dp_trace": self.dp_trace,
+            "status": self.status,
+            "reason": self.reason,
+            "packet_size_bytes": self.packet_size_bytes,
+        }
+
+
+_REQUEST_LOG_LIMIT = 50
+_RECENT_REQUESTS_IN_SNAPSHOT = 20
+
+
 class SimulationState:
     def __init__(self, clock: Callable[[], float] = time.time):
         self._clock = clock
@@ -276,6 +316,11 @@ class SimulationState:
         # every time, so a rescale can never leave remediate() pointing at
         # an Alert whose flow/router no longer exists in the new topology.
         self._alerts_by_server: dict[str, Alert] = {}
+        # Unlike _alerts_by_server, request history isn't rebuilt by
+        # snapshot() -- it's an accumulating log, so it must be explicitly
+        # cleared here or a rescale would leave requests referencing a
+        # torn-down topology sitting in the history.
+        self._request_log: list[RequestEvent] = []
 
         # Baseline: every flow starts Users -> Firewall, fully converged.
         now = self._clock()
@@ -360,6 +405,69 @@ class SimulationState:
             alert, now=self._clock()
         )
         return self.snapshot()
+
+    def send_request(self, server_id: str) -> RequestEvent:
+        """Fire one real, discrete probe at server_id's flow -- caused by a
+        user action, not the periodic tick -- and record its real outcome.
+
+        Reuses the exact same probe_flow()+Verifier.check() call chain
+        snapshot() already runs internally for ambient traffic (Verifier.
+        check() is a pure read against recorded grace-window state; it
+        never mutates anything, only push_legitimate_change() does, so an
+        extra call here between ticks cannot corrupt that state). What
+        makes this event different is that it's individually identified,
+        timestamped, and reports a real delivered/diverged/dropped outcome
+        for one specific request, not folded into a periodic average.
+
+        "diverged" (a real Alert from Verifier.check()) takes priority over
+        the raw delivered/dropped physical outcome, since a PS31 divergence
+        is the more important signal even when the packet nominally still
+        arrived somewhere. Absent an alert, delivered/dropped is decided by
+        Network.delivered() against the flow's actually-registered
+        destination host -- not the boundary probe address used for the
+        trace itself (that address is deliberately chosen at the edge of
+        the prefix to make CORRUPT faults probe-visible, per
+        boundary_probe_address's own docstring, and is not registered as a
+        host attachment, so it can't be used for a delivery check).
+        """
+        try:
+            idx = self.server_ids.index(server_id)
+        except ValueError:
+            raise ValueError(f"unknown server_id {server_id!r}")
+        flow = self.flows[idx]
+        now = self._clock()
+
+        probe_host = self.user_ips[0]
+        probe_dst = boundary_probe_address(flow)
+        intended = self.net.trace_intended(Packet(src=probe_host, dst=probe_dst))
+        actual_packet = Packet(src=probe_host, dst=probe_dst)
+        actual = self.net.trace_actual(actual_packet)
+
+        alert = self.verifier.check(flow, intended, actual, now=now)
+        real_dst_ip = next(flow.hosts())
+        delivered = self.net.delivered(actual_packet, real_dst_ip)
+        status: Literal["delivered", "diverged", "dropped"]
+        if alert is not None:
+            status = "diverged"
+        elif delivered:
+            status = "delivered"
+        else:
+            status = "dropped"
+
+        event = RequestEvent(
+            id=uuid4().hex,
+            server_id=server_id,
+            flow=str(flow),
+            sent_at=now,
+            cp_trace=intended,
+            dp_trace=actual,
+            status=status,
+            reason=alert.reason if alert else None,
+            packet_size_bytes=_packet_size_for(flow, now, self.min_packet_size, self.max_packet_size),
+        )
+        self._request_log.append(event)
+        self._request_log = self._request_log[-_REQUEST_LOG_LIMIT:]
+        return event
 
     def tick(self) -> Snapshot:
         """Apply any due delayed updates and re-evaluate. Called by the

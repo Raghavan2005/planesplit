@@ -361,3 +361,69 @@ def test_rescaling_clears_stale_alerts_so_remediate_then_raises():
     sim.scale(2, 2)  # fresh topology, fully converged
     with pytest.raises(ValueError, match="no active alert"):
         sim.remediate("Server")
+
+
+def test_send_request_on_a_healthy_flow_is_delivered():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    event = sim.send_request("Server")
+    assert event.status == "delivered"
+    assert event.cp_trace == event.dp_trace == ["Users", "Firewall", "Server"]
+    assert event.reason is None
+    assert event.server_id == "Server"
+    assert event.flow == str(FLOW)
+
+
+def test_send_request_on_a_currently_alerted_flow_is_diverged_with_a_reason():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+    sim.inject("drop")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    sim.tick()
+
+    event = sim.send_request("Server")
+    assert event.status == "diverged"
+    assert event.reason is not None
+    assert event.cp_trace != event.dp_trace
+
+
+def test_send_request_reports_dropped_when_the_packet_has_no_route_at_all():
+    """inject()'s existing fault modes (drop/corrupt/delay) never produce a
+    genuine non-delivery in this topology -- every fault still resolves
+    through one of the two always-valid gateways to the same server, so
+    this constructs a real black-hole directly to prove send_request's
+    delivered/dropped branch (as opposed to the diverged/alert branch)
+    works correctly."""
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    del sim.net.routers["Users"].fib[FLOW]
+
+    event = sim.send_request("Server")
+    assert event.status == "dropped"
+    assert event.reason is None  # still within the grace window -- no Alert
+    assert event.dp_trace == ["Users"]
+
+
+def test_send_request_raises_value_error_for_unknown_server_id():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    with pytest.raises(ValueError, match="unknown server_id"):
+        sim.send_request("NoSuchServer")
+
+
+def test_send_request_log_caps_at_fifty_entries():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    for _ in range(60):
+        sim.send_request("Server")
+    assert len(sim._request_log) == 50
+
+
+def test_send_request_log_clears_on_rescale():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    sim.send_request("Server")
+    assert len(sim._request_log) == 1
+    sim.scale(2, 2)
+    assert sim._request_log == []
