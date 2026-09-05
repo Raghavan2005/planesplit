@@ -25,7 +25,7 @@ M4 (CLI Demo + Test Suite Hardening) complete. The project is now a complete, PS
 ## In progress
 Nothing — M4 gate met (all tests green, CLI demo runs clean and repeatably). M0-M4 complete.
 
-- **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, and why there's no separate "reset" step — every run is a fresh in-memory build). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset), previously the last open process requirement.
+- **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, architecture diagram, scenario table, doc index). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset). `cli/demo.py` now opens with a "Why this matters" panel and closes with a "What you just saw" panel, resolving the last unactioned `docs/DEMO.md` jury comment (narrative hook + styling) — the hook deliberately avoids citing any specific unverified incident, per CLAUDE.md §4/§8, and frames the general, documented failure class instead. 3 new CLI smoke tests. Full suite: 29/29 passing.
 
 ## Next up
 Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
@@ -37,4 +37,4 @@ Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal agains
 - No `README.md` yet at the repo root — deferred to M5.
 
 ## Test status
-26/26 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`). No failures, no skips. CLI demo (`python -m planesplit.cli.demo --all`) manually verified to run clean and produce identical output across two separate runs.
+29/29 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`). No failures, no skips. CLI demo (`python -m planesplit.cli.demo --all`) manually verified to run clean and produce identical output across two separate runs, and manually eyeballed with the new hook/closing panels via `--scenario 2`.

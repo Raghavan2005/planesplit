@@ -9,6 +9,7 @@ import argparse
 import sys
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from planesplit.scenarios.definitions import ALL_SCENARIOS, SCENARIO_BY_NUMBER, ProbeResult
@@ -18,6 +19,43 @@ STATUS_STYLE = {
     "TOLERATED": "bold yellow",
     "ALERT": "bold red",
 }
+
+# Deliberately general, not tied to any specific named incident or statistic —
+# CLAUDE.md §4/§8 rule out asserting a fact ("Company X was down for Y hours")
+# that hasn't been verified against a primary source. The failure class itself
+# (control-plane intent silently diverging from data-plane reality) is well
+# documented across SDN, Kubernetes NetworkPolicy propagation, and BGP
+# convergence — see docs/RESEARCH.md — which is enough to motivate the demo
+# without inventing a specific case.
+HOOK_TEXT = (
+    "[bold]Every SDN controller, every Kubernetes NetworkPolicy, every BGP "
+    "route push makes the same silent promise: the rule you configured is "
+    "the rule actually running on the device.[/bold]\n\n"
+    "That promise breaks more often than dashboards admit. An update can be "
+    "delayed, dropped, or only partially applied — and the device keeps "
+    "forwarding traffic on stale or corrupted rules, invisibly, until "
+    "someone notices packets going somewhere they shouldn't.\n\n"
+    "This demo proves — with a real simulated packet traced through the "
+    "actual forwarding tables, not a config diff — that this system can "
+    "tell the difference between a transient, tolerable delay and a "
+    "genuine, persistent divergence."
+)
+
+CLOSING_TEXT = (
+    "Every PASS/TOLERATED/ALERT above came from tracing a simulated packet "
+    "through each router's real forwarding table (RIB for intent, FIB for "
+    "reality) — never from comparing configuration strings. That's the "
+    "difference between [italic]believing[/italic] a network is consistent "
+    "and [italic]proving[/italic] it."
+)
+
+
+def print_hook(console: Console) -> None:
+    console.print(Panel(HOOK_TEXT, title="Why this matters", border_style="cyan", expand=False))
+
+
+def print_closing(console: Console) -> None:
+    console.print(Panel(CLOSING_TEXT, title="What you just saw", border_style="cyan", expand=False))
 
 
 def render(results: list[ProbeResult], console: Console) -> None:
@@ -67,7 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     for scenario_fn in scenarios_to_run:
         all_results.extend(scenario_fn())
 
+    print_hook(console)
+    console.print()
     render(all_results, console)
+    console.print()
+    print_closing(console)
     return 0
 
 
