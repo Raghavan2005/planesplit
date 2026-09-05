@@ -25,8 +25,9 @@ class Verifier:
     must keep resetting that flow's own window on every call (Scenario 6).
     """
 
-    def __init__(self):
+    def __init__(self, grace_window_seconds: float = UpdateChannel.GRACE_WINDOW_SECONDS):
         self._last_legitimate_change_at: dict[IPv4Network, float] = {}
+        self.grace_window_seconds = grace_window_seconds
 
     def push_legitimate_change(self, flow: IPv4Network, now: float) -> None:
         # Always overwrite — never setdefault-once. A flow that changes 5
@@ -55,7 +56,7 @@ class Verifier:
             return None  # converged — no divergence to evaluate at all
 
         last_change = self._last_legitimate_change_at.get(flow)
-        if last_change is not None and (now - last_change) < UpdateChannel.GRACE_WINDOW_SECONDS:
+        if last_change is not None and (now - last_change) < self.grace_window_seconds:
             return None  # divergence expected and tolerated inside this flow's own window
 
         return Alert(
@@ -67,7 +68,7 @@ class Verifier:
             reason=(
                 f"actual path {actual} no longer matches intended path {intended} "
                 f"for flow {flow}, and the grace window "
-                f"({UpdateChannel.GRACE_WINDOW_SECONDS}s since last legitimate change "
+                f"({self.grace_window_seconds}s since last legitimate change "
                 f"at {last_change}) has elapsed"
             ),
         )

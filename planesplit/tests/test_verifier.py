@@ -69,3 +69,11 @@ def test_push_legitimate_change_overwrites_not_setdefault():
     # 0.9s after the SECOND change (still well past 5s from the first) must be tolerated
     alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=5.9)
     assert alert is None
+
+
+def test_check_respects_custom_grace_window_seconds():
+    v = Verifier(grace_window_seconds=5.0)
+    v.push_legitimate_change(FLOW, now=0.0)
+    assert v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=4.9) is None  # still tolerated
+    alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=5.1)
+    assert alert is not None
