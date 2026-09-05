@@ -32,12 +32,14 @@ M0–M4 complete, independently re-verified, and Q2 (negative/edge-case testing)
 ## In progress
 Nothing. M0–M4 complete and Q2 fully closed, all re-verified against actual code.
 
+- **M5 timed rehearsal**: `docs/FINAL_DEMO_SCRIPT.md` created (CLAUDE.md §42 requirement, previously missing entirely). Built from an actually-measured run (`--all` wall time: 0.155s; 88 lines of output) rather than guessed pacing — every command and quoted output line in the script was re-run and verified to match real CLI output before being written down. Notes that program runtime isn't the pacing bottleneck (it's all presenter narration) and recommends running scenarios individually live rather than dumping `--all`.
+
 ## Next up
-Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
+Nothing required. The one remaining item — a stretch-goal web visualization — is a deliberate choice not to build, not an oversight: see "Known gaps" below.
 
 ## Known gaps / not yet covered
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
-- Web visualization is stretch-only (M5) and may not be attempted — this is the planned outcome, not a shortfall (see `docs/MVP.md` §3 Exclusions).
+- **Web visualization (topology + animated packet path) was deliberately not built.** It's explicitly scoped as CLI-first-only in `docs/ARCHITECTURE.md` §4 and excluded in `docs/MVP.md` §3 ("No heavy Web UI... a clear, color-coded CLI output is far more reliable"), and CLAUDE.md §37/§45 rank extra polish last. The CLI already satisfies the PS's actual visualization requirement (expected-vs-observed path, evidence, affected entity). Building it anyway would be scope creep against the project's own documented decision — flagged here explicitly rather than silently skipped, so it's a known choice, not a gap that was missed.
 
 ## Test status
 43/43 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`). No failures, no skips. Working tree clean; local `master` confirmed identical to `origin/master`.
