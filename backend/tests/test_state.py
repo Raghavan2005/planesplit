@@ -1,0 +1,228 @@
+"""Tests for backend/state.py — written after manual UI testing found two
+real bugs in the old from-scratch backend/network.py implementation:
+(1) the corrupt-mask probe used the FIRST host address, which a narrowed
+/25 still covers, so corruption was silently undetected; (2) there was no
+grace-window concept at all, so every mismatch showed as an immediate
+alert. Both are fixed here by reusing the already-tested planesplit engine
+instead of reimplementing it.
+"""
+import pytest
+
+from state import (
+    FLOW,
+    GRACE_WINDOW_SECONDS,
+    MAX_PACKET_SIZE_BYTES,
+    MAX_SERVERS,
+    MAX_USERS,
+    MIN_PACKET_SIZE_BYTES,
+    SimulationState,
+    validate_packet_size,
+)
+
+
+class FakeClock:
+    """Injectable clock so these tests never need a real sleep."""
+
+    def __init__(self, t: float = 0.0):
+        self.t = t
+
+    def __call__(self) -> float:
+        return self.t
+
+    def advance(self, dt: float) -> None:
+        self.t += dt
+
+
+def test_reset_is_fully_synced():
+    sim = SimulationState(clock=FakeClock())
+    snap = sim.reset()
+    assert snap.status == "synced"
+    assert snap.cp_trace == snap.dp_trace == ["Users", "Firewall", "Server"]
+    assert snap.fault_node is None
+
+
+def test_drop_is_tolerated_immediately_then_alerts_after_grace_window():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+
+    snap = sim.inject("drop")
+    assert snap.status == "tolerated"
+    assert snap.cp_trace == ["Users", "AWS_ALB", "Server"]
+    assert snap.dp_trace == ["Users", "Firewall", "Server"]
+
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+    assert snap.status == "alert"
+    assert snap.fault_node == "Users"
+
+
+def test_corrupt_mask_is_detected_via_boundary_probe():
+    """Regression test for the specific false-negative bug found by manually
+    clicking through the UI: a /25 corruption still covers the first host
+    address of the /24, so probing anywhere but the boundary misses it."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+
+    snap = sim.inject("corrupt")
+    assert snap.status == "tolerated"  # correct: not yet past the grace window
+
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+    assert snap.status == "alert"
+    assert snap.cp_trace != snap.dp_trace
+
+
+def test_delay_converges_after_the_delay_elapses():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+
+    snap = sim.inject("delay")
+    assert snap.status == "tolerated"
+
+    clock.advance(GRACE_WINDOW_SECONDS + 2.0)
+    snap = sim.tick()
+    assert snap.status == "synced"
+
+
+def test_repeated_actions_do_not_accumulate_stale_fib_entries():
+    """Regression test for the 'state carries over between clicks' issue
+    found during manual testing: corrupt() writes an extra narrow-prefix
+    FIB entry — a following drop() must not leave that stale entry behind
+    underneath the new fault."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+    sim.inject("corrupt")
+    sim.inject("drop")
+    assert len(sim.net.routers["Users"].fib) == 1
+
+
+def test_none_fault_converges_both_planes_immediately():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+    snap = sim.inject("none")
+    assert snap.status == "synced"
+    assert snap.cp_trace == snap.dp_trace
+
+
+def test_scale_creates_the_requested_number_of_independent_servers():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    snap = sim.scale(num_servers=4, num_users=6)
+
+    assert len(snap.flows) == 4
+    assert snap.num_users == 6
+    assert snap.flows[0].server_id == "Server"  # server 0 keeps the legacy name
+    assert [f.server_id for f in snap.flows[1:]] == ["Server_2", "Server_3", "Server_4"]
+    assert all(f.status == "synced" for f in snap.flows)
+    assert snap.root_causes == []
+
+
+def test_scale_clamps_out_of_range_requests():
+    sim = SimulationState(clock=FakeClock())
+    snap = sim.scale(num_servers=999, num_users=999)
+    assert len(snap.flows) == MAX_SERVERS
+    assert snap.num_users == MAX_USERS
+
+    snap = sim.scale(num_servers=0, num_users=0)
+    assert len(snap.flows) == 1
+    assert snap.num_users == 1
+
+
+def test_scale_then_reset_returns_to_the_single_flow_baseline():
+    sim = SimulationState(clock=FakeClock())
+    sim.scale(num_servers=4, num_users=6)
+    snap = sim.reset()
+    assert len(snap.flows) == 1
+    assert snap.num_users == 1
+    assert snap.cp_trace == snap.dp_trace == ["Users", "Firewall", "Server"]
+
+
+def test_scaled_fault_on_shared_ingress_correlates_across_every_server():
+    """The same fault applied at Users (the shared ingress) breaks every
+    backend server behind it identically -- correlate() (already tested in
+    planesplit/tests/test_correlator.py) should group all of them under one
+    shared root cause, not report N unrelated-looking alerts."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(num_servers=3, num_users=3)
+
+    sim.inject("drop")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+
+    assert all(f.status == "alert" for f in snap.flows)
+    assert all(f.fault_node == "Users" for f in snap.flows)
+    assert len(snap.root_causes) == 1
+    assert snap.root_causes[0]["responsible_router"] == "Users"
+    assert len(snap.root_causes[0]["flows"]) == 3
+
+
+def test_scaled_servers_have_independent_grace_windows_like_unscaled_flows():
+    """Mirrors planesplit's own Scenario 5 guarantee (independent per-flow
+    grace windows) at the backend-state level: injecting a fault only
+    affects flows present at the time of injection, not ones added after."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(num_servers=2, num_users=2)
+    sim.inject("drop")
+
+    # Scaling up mid-fault rebuilds the whole network fresh (matching
+    # reset()'s semantics) -- the new, larger topology starts fully
+    # converged, it doesn't inherit the prior fault.
+    snap = sim.scale(num_servers=3, num_users=3)
+    assert all(f.status == "synced" for f in snap.flows)
+
+
+def test_validate_packet_size_accepts_the_full_valid_ethernet_range():
+    assert validate_packet_size(MIN_PACKET_SIZE_BYTES) == MIN_PACKET_SIZE_BYTES
+    assert validate_packet_size(MAX_PACKET_SIZE_BYTES) == MAX_PACKET_SIZE_BYTES
+    assert validate_packet_size(800) == 800
+
+
+@pytest.mark.parametrize("bad_size", [
+    MIN_PACKET_SIZE_BYTES - 1,
+    MAX_PACKET_SIZE_BYTES + 1,
+    0,
+    -64,
+])
+def test_validate_packet_size_rejects_out_of_range_sizes(bad_size):
+    with pytest.raises(ValueError, match="outside the valid Ethernet"):
+        validate_packet_size(bad_size)
+
+
+@pytest.mark.parametrize("bad_size", [64.5, "64", None, True])
+def test_validate_packet_size_rejects_non_int_input(bad_size):
+    with pytest.raises(ValueError, match="must be an int"):
+        validate_packet_size(bad_size)
+
+
+def test_every_snapshot_flow_carries_a_valid_packet_size():
+    """Every packet_size_bytes this module ever produces must itself pass
+    validate_packet_size -- generation and validation are checked
+    independently so a future change to the generator can't silently drift
+    outside the bound it's supposed to respect."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    snap = sim.scale(num_servers=3, num_users=3)
+    for f in snap.flows:
+        assert validate_packet_size(f.packet_size_bytes) == f.packet_size_bytes
+
+
+def test_packet_size_is_deterministic_for_the_same_clock_but_varies_over_time():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    snap_a = sim.snapshot()
+    snap_b = sim.snapshot()
+    assert snap_a.flows[0].packet_size_bytes == snap_b.flows[0].packet_size_bytes  # same `now` -> same size
+
+    clock.advance(5.0)
+    snap_c = sim.snapshot()
+    # Not a hard guarantee for every possible pair (the hash could coincide),
+    # but with a 1437-value range a same-flow collision across a real time
+    # jump would be a red flag that the generator isn't actually varying.
+    assert snap_a.flows[0].packet_size_bytes != snap_c.flows[0].packet_size_bytes

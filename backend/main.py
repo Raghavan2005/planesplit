@@ -1,114 +1,79 @@
+import asyncio
+import sys
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from pathlib import Path
+
+# Make the repo root importable regardless of the current working directory,
+# so `from planesplit...` resolves whether this is run as `python main.py`
+# from backend/ or as `python -m backend.main` from the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
-import json
-import ipaddress
-from network import Network, Router, Packet
+
+from state import SimulationState
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # allow_credentials=True combined with allow_origins=["*"] is rejected by
+    # browsers in strict mode and is a real misconfiguration — this app uses
+    # no cookies/auth, so allow_credentials=False is the correct fix, not a
+    # workaround.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-class SimulationState:
-    def __init__(self):
-        self.net = Network()
-        self.setup_baseline()
-        
-    def setup_baseline(self):
-        self.net = Network()
-        for name in ["Users", "Firewall", "Server", "AWS_ALB"]:
-            self.net.add_router(Router(name))
-            
-        rA = self.net.routers["Users"]
-        rB = self.net.routers["Firewall"]
-        rC = self.net.routers["Server"]
-        rD = self.net.routers["AWS_ALB"]
-
-        # Default paths
-        rA.add_rib_rule("10.0.1.0/24", "Firewall")
-        rA.add_fib_rule("10.0.1.0/24", "Firewall")
-        rB.add_rib_rule("10.0.1.0/24", "Server")
-        rB.add_fib_rule("10.0.1.0/24", "Server")
-        
-        rD.add_rib_rule("10.0.1.0/24", "Server")
-        rD.add_fib_rule("10.0.1.0/24", "Server")
-        
-    def verify_prefix(self, prefix: str):
-        # Boundary probing logic: try the first and last IP of the subnet
-        net = ipaddress.ip_network(prefix, strict=False)
-        try:
-            test_ip_1 = str(next(net.hosts()))
-            test_ip_2 = str(list(net.hosts())[-1])
-        except:
-            test_ip_1 = str(net.network_address)
-            test_ip_2 = str(net.network_address)
-            
-        packet1_cp = Packet("0.0.0.0", test_ip_1)
-        packet1_dp = Packet("0.0.0.0", test_ip_1)
-        
-        cp_trace = self.net.simulate_path(packet1_cp, "Users", use_cp=True)
-        dp_trace = self.net.simulate_path(packet1_dp, "Users", use_cp=False)
-        
-        return cp_trace, dp_trace
-
 state = SimulationState()
+clients: list[WebSocket] = []
 
-clients = []
+
+async def broadcast_snapshot() -> None:
+    message = state.snapshot().to_dict()
+    for client in list(clients):
+        try:
+            await client.send_json(message)
+        except Exception:
+            pass
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     clients.append(websocket)
+    await websocket.send_json(state.snapshot().to_dict())
     try:
         while True:
-            data = await websocket.receive_text()
-            cmd = json.loads(data)
-            
-            if cmd["action"] == "reset":
-                state.setup_baseline()
-                cp, dp = state.verify_prefix("10.0.1.0/24")
-                await broadcast({"type": "state", "cp_trace": cp, "dp_trace": dp})
-                
-            elif cmd["action"] == "update_route":
-                # Intent: Users -> AWS_ALB -> Server
-                state.net.routers["Users"].add_rib_rule("10.0.1.0/24", "AWS_ALB")
-                
-                fault_type = cmd.get("fault", "none")
-                
-                cp, dp = state.verify_prefix("10.0.1.0/24")
-                await broadcast({"type": "state", "cp_trace": cp, "dp_trace": dp})
-                
-                if fault_type == "delay":
-                    await asyncio.sleep(2) # simulate delay
-                    state.net.routers["Users"].add_fib_rule("10.0.1.0/24", "AWS_ALB")
-                    cp, dp = state.verify_prefix("10.0.1.0/24")
-                    await broadcast({"type": "state", "cp_trace": cp, "dp_trace": dp, "note": "Convergence achieved"})
-                    
-                elif fault_type == "drop":
-                    # We just never update the FIB!
-                    pass
-                    
-                elif fault_type == "corrupt":
-                    # Put a /25 instead of /24 in the FIB
-                    state.net.routers["Users"].add_fib_rule("10.0.1.0/25", "AWS_ALB")
-                    cp, dp = state.verify_prefix("10.0.1.0/24")
-                    await broadcast({"type": "state", "cp_trace": cp, "dp_trace": dp, "note": "Corrupted FIB rule applied"})
-
+            data = await websocket.receive_json()
+            action = data.get("action")
+            if action == "reset":
+                state.reset()
+            elif action == "update_route":
+                state.inject(data.get("fault", "none"))
+            elif action == "scale":
+                state.scale(data.get("num_servers", 1), data.get("num_users", 1))
+            await broadcast_snapshot()
     except WebSocketDisconnect:
         clients.remove(websocket)
 
-async def broadcast(message: dict):
-    for client in clients:
-        try:
-            await client.send_json(message)
-        except:
-            pass
+
+@app.on_event("startup")
+async def start_tick_loop() -> None:
+    async def loop():
+        while True:
+            await asyncio.sleep(0.3)
+            if clients:
+                state.tick()
+                await broadcast_snapshot()
+
+    asyncio.create_task(loop())
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
