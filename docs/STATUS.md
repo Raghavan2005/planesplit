@@ -47,15 +47,22 @@ Nothing required.
 ## Known gaps / not yet covered
 - **Resolved, kept for the record:** `docs/INNOVATION.md`'s §5 ("Innovation 1: Multi-Flow Root-Cause Correlation") previously claimed a real implementation — `verify/correlator.py`, `tests/test_correlator.py`, `scenario_7_multi_flow_root_cause()` — that did not exist anywhere in the repo or git history, a `CLAUDE.md` §8/§35 violation from a prior session. Now actually built (see "Done" above); the doc's implementation section was rewritten to cite the real files/tests.
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
-- **`backend/` and `frontend/` — a 3D web visualization matching `docs/UI_PLAN.md`, added to the repo but not yet reconciled with `planesplit/`.** This reverses the earlier "CLI-only" decision (`docs/ARCHITECTURE.md` §4, `docs/MVP.md` §3) — that reversal hasn't been re-recorded as a formal decision yet, only tracked here. Real, known issues, none fixed yet:
-  1. `backend/network.py` **reimplements** `Router`/`Network`/`Packet` from scratch instead of importing the tested `planesplit/core/` classes — a second, unverified copy of logic that already exists, tested, in `planesplit/`.
-  2. **No grace window** — `verify_prefix()` compares control-plane vs data-plane paths immediately with no tolerated-delay concept, which is the actual core mechanism PS31 asks for.
-  3. **Uses a real wall-clock `await asyncio.sleep(2)`** to simulate delay — exactly what `docs/ARCHITECTURE.md` §5's decision record rejected, since it breaks deterministic repeatability (R13).
-  4. **No `Verifier`/`Alert`, no tests** — nothing constructs a PASS/TOLERATED/ALERT verdict server-side with evidence; the frontend gets raw paths only.
-  5. **State accumulates across WebSocket actions** without a reset between them — injecting one fault after another in the same session can leave stale FIB rules in place.
-  6. `CORSMiddleware(allow_origins=["*"], allow_credentials=True)` — browsers reject this combination in strict mode; a real misconfiguration, low risk for a local demo.
-  7. No `requirements.txt` for `backend/` — the venv exists locally but isn't reproducible from the repo alone.
-  - **Not yet decided**: whether to fix `backend/` to import and wrap the real `planesplit` logic (recommended — keeps one tested source of truth) or leave it as an independent prototype.
+- **`backend/` and `frontend/` — a 3D web visualization matching `docs/UI_PLAN.md`.** This reverses the earlier "CLI-only" decision (`docs/ARCHITECTURE.md` §4, `docs/MVP.md` §3) — that reversal still hasn't been re-recorded as a formal decision, only tracked here.
+  - **Corrected below (2026-09-05): the 6-item gap list this section previously carried was stale.** A prior rewrite (`516afea`, "rebuild demo backend on the tested planesplit engine") already fixed the from-scratch reimplementation, missing grace window, wall-clock `asyncio.sleep`, missing `Verifier`/`Alert`, stale-FIB-on-repeated-actions, and CORS misconfiguration — none of that was reflected here until now. Verified directly against current `backend/state.py`/`backend/main.py`:
+    - `backend/state.py` imports and wraps the real, tested `planesplit.core`/`planesplit.faults`/`planesplit.verify` classes — no reimplementation.
+    - `SimulationState` holds a real per-flow `Verifier(grace_window_seconds=...)` and builds real `Alert` objects; `snapshot()` derives `synced`/`tolerated`/`alert` from `Verifier.check()`, not an immediate diff.
+    - The only clock used is an injectable `self._clock` (defaulting to `time.time`, swappable to a `FakeClock` in tests) — no `asyncio.sleep`-based fault delay; `UpdateChannel.tick(now)` drives DELAY convergence.
+    - `inject()` explicitly clears stale FIB entries left by a prior CORRUPT fault before applying a new one (regression-tested).
+    - `main.py`'s CORS config is `allow_origins=["*"], allow_credentials=False` — the unsafe `*` + `credentials=True` combination is not present.
+    - `backend/requirements.txt` now pins `fastapi==0.141.1`, `uvicorn[standard]==0.52.4`, `pydantic==2.13.5`, `pytest==9.1.1` (fixed in this pass — previously present but unpinned and missing `pydantic`/`pytest`).
+  - **Real, currently-open gaps** (being closed incrementally in this pass — see commits after 2026-09-05 for progress):
+    1. `planesplit/verify/remediator.py`'s `Remediator` is fully built and tested but never called from `backend/` — no way to actually fix a detected divergence from the dashboard yet.
+    2. No request/schema validation on incoming WS messages — a wrong-typed field can raise uncaught deep inside `state.py` and kill that client's WS loop.
+    3. `broadcast_snapshot()`'s dead-socket cleanup is reactive only (via the next `WebSocketDisconnect`), not proactive.
+    4. `@app.on_event("startup")` is FastAPI-deprecated (should be a `lifespan` context manager).
+    5. No discrete, user-triggered "send a request" action — all traffic is either fault-injection or the recurring background tick; there's no way to fire one request and see a real pass/fail result tied to that action.
+    6. Global singleton `state`/`clients` — no per-session isolation between browser connections (multiple viewers share one simulation). Explicitly out of scope for the current hardening pass.
+    7. `frontend/src/App.tsx` is a single ~1200-line file with hardcoded inline colors and `// @ts-nocheck` (see frontend section below).
 
 ## Test status
 58/58 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`, `test_remediator.py`, `test_correlator.py`). No failures, no skips.
