@@ -86,7 +86,7 @@ export const font = {
 } as const
 
 export const buttonStyle: CSSProperties = {
-  padding: '12px 20px',
+  padding: '8px 12px',
   background: 'rgba(56, 189, 248, 0.1)',
   borderWidth: '1px',
   borderStyle: 'solid',
@@ -95,9 +95,10 @@ export const buttonStyle: CSSProperties = {
   borderRadius: '6px',
   cursor: 'pointer',
   fontWeight: 'bold',
-  letterSpacing: '1px',
+  letterSpacing: '0.6px',
   textTransform: 'uppercase',
-  fontSize: '12px',
+  fontSize: '11px',
+  lineHeight: '1.2',
   transition: 'all 0.2s',
   outline: 'none',
 }
@@ -123,15 +124,15 @@ export const secondaryButtonStyle: CSSProperties = {
 export const numberInputStyle: CSSProperties = {
   display: 'block',
   width: '100%',
-  marginTop: '4px',
-  padding: '8px 10px',
+  marginTop: '3px',
+  padding: '5px 8px',
   background: 'rgba(2, 6, 23, 0.5)',
   borderWidth: '1px',
   borderStyle: 'solid',
   borderColor: 'rgba(148, 163, 184, 0.3)',
   borderRadius: '6px',
   color: colors.textPrimary,
-  fontSize: '13px',
+  fontSize: '12px',
   fontWeight: 'bold',
   outline: 'none',
   boxSizing: 'border-box',
@@ -140,7 +141,8 @@ export const numberInputStyle: CSSProperties = {
 export const rangeInputStyle: CSSProperties = {
   display: 'block',
   width: '100%',
-  marginTop: '6px',
+  marginTop: '4px',
+  height: '14px',
   accentColor: colors.accent,
   cursor: 'pointer',
 }

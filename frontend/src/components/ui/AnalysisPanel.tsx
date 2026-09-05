@@ -47,7 +47,14 @@ export function AnalysisPanel({ flow, rootCauses, requestEvents }: AnalysisPanel
 
   const pathsMatch = flow.cp_trace.join('>') === flow.dp_trace.join('>')
   const correlatedGroup = rootCauses.find((rc) => rc.flows.includes(flow.flow))
-  const recentRequests = [...requestEvents].reverse().slice(0, 15)
+  // Capped at 4 (not the full history) and rendered as single-line rows —
+  // this is a deliberate cap, not an accident: at this viewport size there
+  // isn't room to show unbounded request history without either scrolling
+  // or shrinking everything else below usability, and the 4 most recent
+  // real outcomes are what actually matters for a live demo. The full
+  // per-request record (id, path, reason, timestamp) is unchanged, just
+  // fewer rows are shown at once.
+  const recentRequests = [...requestEvents].reverse().slice(0, 3)
 
   return (
     <div style={panelStyle}>
@@ -60,29 +67,30 @@ export function AnalysisPanel({ flow, rootCauses, requestEvents }: AnalysisPanel
         <HopList label="Data plane (observed)" hops={flow.dp_trace} highlight />
       )}
 
-      <FieldRow label="Fault node" value={flow.fault_node ?? '—'} />
-      <FieldRow label="Reason" value={flow.reason ?? '—'} />
-      <FieldRow label="Detected" value={flow.detected_at != null ? formatElapsed(flow.detected_at) : '—'} />
-      <FieldRow label="Packet size" value={`${flow.packet_size_bytes} B`} />
-      <FieldRow
-        label="Correlation"
-        value={
-          correlatedGroup
-            ? `Shared with ${correlatedGroup.flows.length - 1} other flow(s) under ${correlatedGroup.responsible_router}`
-            : 'Not correlated'
-        }
-      />
+      {/* Short key/value fields packed two-per-row; Reason is the one field
+          that can run long (a full sentence from the verifier), so it gets
+          its own full-width row below the grid. */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '10px', rowGap: 0 }}>
+        <FieldRow label="Fault node" value={flow.fault_node ?? '—'} />
+        <FieldRow label="Detected" value={flow.detected_at != null ? formatElapsed(flow.detected_at) : '—'} />
+        <FieldRow label="Packet size" value={`${flow.packet_size_bytes} B`} />
+        <FieldRow
+          label="Correlation"
+          value={correlatedGroup ? `+${correlatedGroup.flows.length - 1} under ${correlatedGroup.responsible_router}` : 'Not correlated'}
+        />
+      </div>
+      <FieldRow label="Reason" value={flow.reason ?? '—'} clamp />
 
-      <SectionTitle small>Request history</SectionTitle>
-      {recentRequests.length === 0 ? (
-        <div style={mutedNoteStyle}>No requests sent yet.</div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
-          {recentRequests.map((ev) => (
+      <SectionTitle small>Request history{requestEvents.length > recentRequests.length ? ` (last ${recentRequests.length} of ${requestEvents.length})` : ''}</SectionTitle>
+      <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
+        {recentRequests.length === 0 ? (
+          <div style={mutedNoteStyle}>No requests sent yet.</div>
+        ) : (
+          recentRequests.map((ev) => (
             <RequestHistoryRow key={ev.id} event={ev} highlighted={ev.server_id === flow.server_id} />
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   )
 }
@@ -96,24 +104,31 @@ function formatElapsed(epochSeconds: number): string {
 }
 
 const panelStyle = {
-  padding: '12px',
+  padding: '10px',
   background: 'rgba(0,0,0,0.3)',
   borderRadius: '8px',
   border: '1px solid rgba(255,255,255,0.05)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '4px',
+  width: '100%',
+  minHeight: 0,
+  overflow: 'hidden',
+  lineHeight: '1.25',
 } as const
 
 const mutedNoteStyle = {
   fontSize: '11px',
   color: colors.textMuted,
-  marginBottom: '8px',
 } as const
 
 function SectionTitle({ children, small }: { children: ReactNode; small?: boolean }) {
   return (
     <div style={{
-      fontSize: small ? '10px' : '12px', fontWeight: 'bold', color: colors.textPrimary,
+      flexShrink: 0,
+      fontSize: small ? '10px' : '11px', fontWeight: 'bold', color: colors.textPrimary,
       textTransform: small ? 'uppercase' : 'none', letterSpacing: small ? '0.5px' : 'normal',
-      marginTop: small ? '14px' : 0, marginBottom: '8px',
+      marginTop: small ? '4px' : 0,
     }}>
       {children}
     </div>
@@ -122,15 +137,15 @@ function SectionTitle({ children, small }: { children: ReactNode; small?: boolea
 
 function HopList({ label, hops, highlight }: { label: string; hops: string[]; highlight?: boolean }) {
   return (
-    <div style={{ marginBottom: '8px' }}>
-      <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: colors.textMuted, marginBottom: '4px' }}>
+    <div style={{ flexShrink: 0 }}>
+      <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.5px', color: colors.textMuted, marginBottom: '2px' }}>
         {label}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '4px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px' }}>
         {hops.map((hop, i) => (
-          <span key={`${hop}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span key={`${hop}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
             <HopChip hop={hop} highlight={highlight} />
-            {i < hops.length - 1 && <span style={{ color: colors.textDim, fontSize: '11px' }}>→</span>}
+            {i < hops.length - 1 && <span style={{ color: colors.textDim, fontSize: '9px' }}>→</span>}
           </span>
         ))}
       </div>
@@ -138,51 +153,72 @@ function HopList({ label, hops, highlight }: { label: string; hops: string[]; hi
   )
 }
 
+// The node-kind suffix ("(ROUTER)", "(GATEWAY)") that used to be printed
+// inline was the single biggest cause of this list wrapping to 2 lines at
+// 340px sidebar width -- e.g. "AWS_ALB (ROUTER)" is roughly twice the width
+// of "AWS_ALB" alone, and multiplied across every hop in both the CP and
+// DP trace that was ~90px of avoidable wrapped height. The kind is still
+// fully conveyed (the dot's color already maps 1:1 to kind via
+// nodeKindColor, same mapping used everywhere else in this app) and is
+// still available on demand via the native title tooltip -- nothing is
+// deleted, just no longer forced inline when space is this tight.
 function HopChip({ hop, highlight }: { hop: string; highlight?: boolean }) {
   const isOutcomeMarker = hop === 'DROP' || hop === 'LOOP'
   const kind = isOutcomeMarker ? null : nodeKindFor(hop)
   const dotColor = kind ? nodeKindColor[kind] : colors.danger
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '4px',
-      padding: '2px 6px', borderRadius: '4px', fontSize: '11px', fontFamily: font.mono,
-      background: highlight ? 'rgba(251, 191, 36, 0.08)' : 'rgba(255,255,255,0.04)',
-      color: colors.textPrimary, fontWeight: isOutcomeMarker ? 'bold' : 'normal',
-    }}>
-      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
-      {hop}{kind ? ` (${KIND_ABBR[kind]})` : ''}
+    <span
+      title={kind ? `${hop} — ${KIND_ABBR[kind]}` : hop}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '2px', lineHeight: '1.2',
+        padding: '1px 4px', borderRadius: '4px', fontSize: '9px', fontFamily: font.mono,
+        background: highlight ? 'rgba(251, 191, 36, 0.08)' : 'rgba(255,255,255,0.04)',
+        color: colors.textPrimary, fontWeight: isOutcomeMarker ? 'bold' : 'normal',
+      }}>
+      <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+      {hop}
     </span>
   )
 }
 
-function FieldRow({ label, value }: { label: string; value: string }) {
+// `clamp` bounds a field's value to 2 lines with an ellipsis instead of
+// letting it grow unbounded — used only for "Reason", the one field that
+// carries a full sentence from the verifier rather than a short token.
+function FieldRow({ label, value, clamp }: { label: string; value: string; clamp?: boolean }) {
   return (
     <div style={{
-      display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px',
-      padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+      display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '10px', lineHeight: '1.25',
+      padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0,
     }}>
-      <span style={{ color: colors.textMuted }}>{label}</span>
-      <span style={{ color: colors.textPrimary, fontWeight: 'bold', textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+      <span style={{ color: colors.textMuted, flexShrink: 0 }}>{label}</span>
+      <span style={{
+        color: colors.textPrimary, fontWeight: 'bold', textAlign: 'right', wordBreak: 'break-word',
+        ...(clamp ? { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const } : {}),
+      }}>{value}</span>
     </div>
   )
 }
 
+// Single-line, information-dense row: status + server + elapsed time on
+// one line, the actual path condensed and truncated with an ellipsis
+// rather than wrapped — the full path for the *selected* server is already
+// shown in full above via HopList, so this row only needs to identify
+// which request this was and its outcome, not re-render the whole trace.
 function RequestHistoryRow({ event, highlighted }: { event: RequestEvent; highlighted: boolean }) {
   const color = requestStatusColor[event.status]
   const path = event.status === 'delivered' ? event.cp_trace : event.dp_trace
   return (
     <div style={{
-      padding: '6px 8px', borderRadius: '6px',
+      display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '4px', flexShrink: 0,
       background: highlighted ? 'rgba(56, 189, 248, 0.06)' : 'rgba(0,0,0,0.2)',
       border: `1px solid ${highlighted ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.05)'}`,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 'bold', color: colors.textPrimary }}>{event.server_id}</span>
-        <span style={{ fontSize: '10px', fontWeight: 'bold', color, letterSpacing: '0.5px' }}>{requestStatusLabel[event.status]}</span>
-      </div>
-      <div style={{ fontSize: '10px', color: colors.textSecondary, wordBreak: 'break-word' }}>{path.join(' → ')}</div>
-      {event.reason && <div style={{ fontSize: '10px', color: colors.warning, marginTop: '2px' }}>{event.reason}</div>}
-      <div style={{ fontSize: '10px', color: colors.textDim, marginTop: '2px' }}>{formatElapsed(event.sent_at)}</div>
+      <span style={{ fontSize: '9px', fontWeight: 'bold', color, letterSpacing: '0.3px', flexShrink: 0, width: '48px' }}>{requestStatusLabel[event.status]}</span>
+      <span style={{ fontSize: '10px', fontWeight: 'bold', color: colors.textPrimary, flexShrink: 0 }}>{event.server_id}</span>
+      <span style={{ fontSize: '9px', color: colors.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+        {path.join('→')}{event.reason ? ` · ${event.reason}` : ''}
+      </span>
+      <span style={{ fontSize: '9px', color: colors.textDim, flexShrink: 0 }}>{formatElapsed(event.sent_at)}</span>
     </div>
   )
 }

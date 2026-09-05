@@ -19,7 +19,7 @@ export function RemediateButton({ serverId, status, isLive, onRemediate }: Remed
     <button
       disabled={!isLive}
       onClick={() => onRemediate(serverId)}
-      style={{ ...(isLive ? warningButtonStyle : disabledButtonStyle), width: '100%', marginTop: '10px' }}
+      style={{ ...(isLive ? warningButtonStyle : disabledButtonStyle), padding: '6px 10px', fontSize: '10px', whiteSpace: 'nowrap' }}
     >
       REMEDIATE
     </button>

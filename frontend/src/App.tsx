@@ -438,14 +438,15 @@ export default function App() {
           width, own scroll region, no longer competing with the 3D scene
           for screen space. */}
       <div style={{
-        gridArea: 'left', overflowY: 'auto', padding: '20px',
+        gridArea: 'left', padding: '12px', minHeight: 0,
+        display: 'flex', flexDirection: 'column', gap: '8px',
         background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         {/* Fault target scope — 'all' (historical default) injects into
             every server's flow, 'selected' targets only whichever server
             tile is currently selected in the right sidebar's status grid.
             Purely a targeting choice, doesn't disable anything below. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', flexShrink: 0 }}>
           <button onClick={() => setFaultScope('all')} style={faultScope === 'all' ? buttonStyle : secondaryButtonStyle}>
             ALL SERVERS
           </button>
@@ -455,7 +456,7 @@ export default function App() {
         </div>
 
         {/* Controls */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', flexShrink: 0 }}>
           <button disabled={!isLive} onClick={() => triggerUpdate('none')} style={isLive ? buttonStyle : disabledButtonStyle}>
             UPDATE ROUTE (SYNC)
           </button>
@@ -482,15 +483,15 @@ export default function App() {
             click. Deliberately visually distinct (neutral secondary style)
             from the danger/warning fault buttons above, since these apply
             a full scenario rather than a single fault. */}
-        <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
+        <div style={{ flexShrink: 0, padding: '8px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
             {PRESETS.map(preset => (
               <button
                 key={preset.label}
                 disabled={!isLive}
                 onClick={() => triggerPreset(preset)}
-                style={isLive ? secondaryButtonStyle : disabledButtonStyle}
+                style={isLive ? { ...secondaryButtonStyle, fontSize: '9.5px', padding: '8px 6px' } : { ...disabledButtonStyle, fontSize: '9.5px', padding: '8px 6px' }}
               >
                 {preset.label.toUpperCase()}
               </button>
@@ -503,10 +504,10 @@ export default function App() {
             (the real IPv4 host-octet ceiling, not an arbitrary UX limit),
             but these inputs share the exact same bounds so nothing typed
             here silently gets clamped without the field reflecting it. */}
-        <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
-            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+        <div style={{ flexShrink: 0, padding: '8px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '6px' }}>
+            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
               Servers ({MIN_SERVERS}–{MAX_SERVERS})
               <input
                 type="number" min={MIN_SERVERS} max={MAX_SERVERS} value={serverInput}
@@ -515,7 +516,7 @@ export default function App() {
                 style={numberInputStyle}
               />
             </label>
-            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
               Users ({MIN_USERS}–{MAX_USERS})
               <input
                 type="number" min={MIN_USERS} max={MAX_USERS} value={userInput}
@@ -525,8 +526,8 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ marginBottom: '6px' }}>
+            <label style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
               <span>Grace window</span>
               <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{graceWindowInput.toFixed(1)}s</span>
             </label>
@@ -537,8 +538,8 @@ export default function App() {
               style={rangeInputStyle}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
-            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '6px' }}>
+            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
               <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Min packet</span>
                 <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{minPacketInput}B</span>
@@ -550,7 +551,7 @@ export default function App() {
                 style={rangeInputStyle}
               />
             </label>
-            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
               <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Max packet</span>
                 <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{maxPacketInput}B</span>
@@ -563,7 +564,7 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
             <button disabled={!isLive} onClick={triggerApplyConfig} style={isLive ? buttonStyle : disabledButtonStyle}>
               APPLY CONFIG
             </button>
@@ -681,61 +682,67 @@ export default function App() {
           and root-cause correlation. Own scroll region, independent of
           the left sidebar and the 3D viewport. */}
       <div style={{
-        gridArea: 'right', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px',
+        gridArea: 'right', padding: '12px', minHeight: 0,
+        display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
-        <div>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>
-            {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
-          </h3>
-          <div style={{
-              padding: '10px',
-              textAlign: 'center',
-              borderRadius: '6px',
-              background: `${overallColor}1a`,
-              border: `1px solid ${overallColor}4d`,
-          }}>
-              <span style={{
-                  color: overallColor,
-                  fontWeight: 'bold',
-                  letterSpacing: '2px',
-                  textTransform: 'uppercase',
-                  fontSize: '14px'
-              }}>
-                  {overallStatus === 'alert' ? `${alertCount}/${flows.length} SERVERS ALERTING` : STATUS_LABEL[overallStatus]}
-              </span>
-          </div>
+        {/* Roster count + overall status combined into one row instead of a
+            stacked heading + full-width banner — same real data, half the
+            vertical footprint. */}
+        <div style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
+            padding: '7px 10px', borderRadius: '6px',
+            background: `${overallColor}1a`, border: `1px solid ${overallColor}4d`,
+        }}>
+            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+              {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
+            </span>
+            <span style={{
+                color: overallColor, fontWeight: 'bold', letterSpacing: '1px',
+                textTransform: 'uppercase', fontSize: '11px', textAlign: 'right',
+            }}>
+                {overallStatus === 'alert' ? `${alertCount}/${flows.length} ALERTING` : STATUS_LABEL[overallStatus]}
+            </span>
         </div>
 
-        <div>
+        <div style={{ flexShrink: 0 }}>
           <StatusLegend />
           <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
         </div>
 
-        <ServerDetailCard
-          flow={selectedFlow}
-          isLive={isLive}
-          onRemediate={triggerRemediate}
-          onSendRequest={triggerSendRequest}
-        />
+        <div style={{ flexShrink: 0 }}>
+          <ServerDetailCard
+            flow={selectedFlow}
+            isLive={isLive}
+            onRemediate={triggerRemediate}
+            onSendRequest={triggerSendRequest}
+          />
+        </div>
 
         {/* Full per-flow metadata + request history — every field here
             already comes from a real FlowSnapshot/RequestEvent flowing
-            through useSimulationSocket, nothing computed client-side. */}
-        <AnalysisPanel flow={selectedFlow} rootCauses={rootCauses} requestEvents={requestEvents} />
+            through useSimulationSocket, nothing computed client-side. Given
+            flex-grow + minHeight: 0, this is the one panel allowed to
+            absorb/shrink with whatever vertical space the fixed-size
+            sections above and below leave it — its own internal request
+            history list is what adapts (see AnalysisPanel), not a scrollbar
+            on this wrapper. */}
+        <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex' }}>
+          <AnalysisPanel flow={selectedFlow} rootCauses={rootCauses} requestEvents={requestEvents} />
+        </div>
 
         {/* Real output of verify/correlator.py (already tested in
             planesplit/tests/test_correlator.py) — only appears when 2+
             servers share a responsible_router, i.e. the shared-ingress
             fault case scale() + inject() are built to demonstrate. */}
         {rootCauses.length > 0 && (
-            <div style={{ padding: '12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '6px' }}>
+            <div style={{ flexShrink: 0, padding: '6px 10px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px', maxHeight: '42px', overflow: 'hidden' }}>
+                <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '2px' }}>
                     Root Cause Analysis
                 </div>
-                {rootCauses.map((rc, i) => (
-                    <div key={i} style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
-                        <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) all diverge at the same router: <b>{rc.responsible_router}</b>. Reported as one shared root cause, not {rc.flows.length} separate alerts.
+                {rootCauses.slice(0, 1).map((rc, i) => (
+                    <div key={i} title={`${rc.flows.length} servers (${rc.flows.join(', ')}) all diverge at the same router: ${rc.responsible_router}. Reported as one shared root cause, not ${rc.flows.length} separate alerts.`} style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                        <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) diverge at <b>{rc.responsible_router}</b> — one shared root cause, not {rc.flows.length} alerts.
                     </div>
                 ))}
             </div>

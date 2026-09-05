@@ -2,7 +2,7 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-06 (backend hardening pass: Remediator wired in, real user-triggered send_request, WS validation, dead-socket cleanup, lifespan — see "Known gaps" below)
+**Last updated:** 2026-09-06 (frontend: eliminated all internal-panel scrolling in the left/right sidebars at 1536x864 — see "Done" below)
 
 ## Current phase
 The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-verified — see the dated sections below for that history. Beyond the baseline, the `backend/`/`frontend/` web dashboard (a stretch-goal addition, not part of R1–R13) is mid a hardening + feature pass: backend half done (see "Known gaps"), frontend half (2D topology map, real router/gateway node status, user-triggered request UI, analysis panel, theme/component cleanup) in progress.
@@ -38,8 +38,16 @@ The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-
 
 - `docs/FUTURE_VISION.md` — written up an AI-assisted, AWS-aware recommendation-layer idea raised live in jury Q&A (going beyond PS31's detection scope into path/config recommendations). Explicitly marked NOT IMPLEMENTED and kept out of `docs/INNOVATION.md` on purpose, so the one real "claimed but not built" mistake this project already made and fixed (the correlator) isn't repeated for this idea too. Reframes the jury answer's weaker point (multi-LLM voting as a hallucination fix) around its actually-defensible parts: RAG grounding in real recorded evidence, and human review as the real trust gate.
 
+- **Sidebar layout rework — removed all internal panel scrolling (2026-09-06):** the left and right sidebars (`frontend/src/App.tsx`) both had `overflowY: 'auto'` and, at a real 1536x864 viewport with a busy live state (4+ servers, an active shared-root-cause alert, request history populated), genuinely didn't fit their content — verified with a Playwright browser at that exact resolution before touching anything. Fixed with real flexbox layout, not arbitrary shrinking:
+  - Both sidebars are now `display:flex, flexDirection:'column'` with each section marked `flexShrink:0` except the one panel that's allowed to flex (`AnalysisPanel`, `flex:'1 1 auto', minHeight:0`).
+  - `ServerDetailCard` no longer duplicates the CP/DP hop-by-hop trace and packet size that `AnalysisPanel`'s "Full Analysis" section already renders directly below it — the single biggest redundant-content cut. It's now just identity + status dot + the two action buttons.
+  - `AnalysisPanel`'s hop chips dropped their inline `(ROUTER)`/`(GATEWAY)`/... kind suffix (the single biggest cause of the CP/DP hop list wrapping to 2 lines) — the kind is still fully conveyed by the existing color-coded dot and is still available via a `title` tooltip on hover, nothing was deleted.
+  - `theme.ts`'s shared `buttonStyle`/`numberInputStyle`/`rangeInputStyle` padding and font-size were reduced app-wide (12px/20px → 8px/12px padding, 12px → 11px font) — a deliberate, justified density increase, not a one-off hack.
+  - Two content caps, explicitly not silent: `AnalysisPanel`'s request history shows only the 3 most recent events (was unbounded via its own internal scrolling `maxHeight` div) with a "(last 3 of N)" label when more exist; `ServerStatusGrid`'s tile grid keeps a `maxHeight:90px` internal scroll as a last-resort fallback *only* for very large server counts (tested clean with zero scrolling up through 24 servers/30 users) — this is the one remaining internal-scroll affordance in either sidebar, and it only ever activates at server counts well beyond what a demo would realistically show.
+  - Verified via a recursive DOM walk (`scrollHeight`/`clientHeight`/`scrollWidth`/`clientWidth` on every element) at 1536x864 with a real live 4-server shared-root-cause alert and 3 sent test requests: zero elements with `overflow-y`/`overflow-x` of `auto`/`scroll` and actual overflowing content. The only remaining `scrollHeight > clientHeight` elements are deliberate single/multi-line ellipsis or `-webkit-line-clamp` truncations (never produce a scrollbar) — confirmed both programmatically and with screenshots. Also re-verified at 24 servers/30 users to confirm the design doesn't regress at higher counts. `npm run build` passes clean (0 errors).
+
 ## In progress
-Frontend half of the dashboard hardening pass: `frontend/src/theme.ts` token module, `useSimulationSocket` hook extraction, 2D `TopologyMap`, real router/gateway node status, `SendRequestButton`/`RemediateButton`, `AnalysisPanel`, 3D/2D view toggle, grace-window/packet-size sliders.
+Frontend half of the dashboard hardening pass: `useSimulationSocket` hook extraction, 2D `TopologyMap`, real router/gateway node status, `SendRequestButton`/`RemediateButton`, 3D/2D view toggle, grace-window/packet-size sliders. (`theme.ts` extraction and the sidebar scrolling rework above are done.)
 
 ## Next up
 Once the frontend pass lands: a final full-system verification pass (backend + planesplit test suites, `vite build`, manual smoke test of the complete user-triggered-request flow end-to-end in the browser).
