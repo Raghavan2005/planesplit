@@ -1,0 +1,45 @@
+"""Isolated unit tests for verify/verifier.py (M3), no network/routing involved."""
+from ipaddress import IPv4Network
+
+from planesplit.faults.update_channel import UpdateChannel
+from planesplit.verify.verifier import Verifier
+
+FLOW = IPv4Network("10.0.2.0/24")
+
+
+def test_check_returns_none_when_paths_match():
+    v = Verifier()
+    assert v.check(FLOW, ["A", "B", "C"], ["A", "B", "C"], now=0.0) is None
+
+
+def test_check_tolerates_mismatch_inside_grace_window():
+    v = Verifier()
+    v.push_legitimate_change(FLOW, now=0.0)
+    alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=1.0)
+    assert alert is None
+
+
+def test_check_alerts_after_grace_window_elapses():
+    v = Verifier()
+    v.push_legitimate_change(FLOW, now=0.0)
+    alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=UpdateChannel.GRACE_WINDOW_SECONDS + 0.1)
+    assert alert is not None
+    assert alert.flow == FLOW
+    assert alert.expected_path == ["A", "B", "C"]
+    assert alert.actual_path == ["A", "D", "C"]
+    assert alert.responsible_router == "A"  # last common hop before divergence
+
+
+def test_check_with_no_prior_legitimate_change_alerts_immediately():
+    v = Verifier()
+    alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=0.1)
+    assert alert is not None
+
+
+def test_push_legitimate_change_overwrites_not_setdefault():
+    v = Verifier()
+    v.push_legitimate_change(FLOW, now=0.0)
+    v.push_legitimate_change(FLOW, now=5.0)  # must overwrite, not keep the first value
+    # 0.9s after the SECOND change (still well past 5s from the first) must be tolerated
+    alert = v.check(FLOW, ["A", "B", "C"], ["A", "D", "C"], now=5.9)
+    assert alert is None
