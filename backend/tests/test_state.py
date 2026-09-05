@@ -336,6 +336,20 @@ def test_remediate_does_not_disturb_other_scaled_servers():
     assert by_id["Server_3"].status == "synced"
 
 
+def test_snapshot_includes_detected_at_for_alerted_flow_only():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+    snap = sim.snapshot()
+    assert snap.flows[0].detected_at is None  # synced -- no alert yet
+
+    sim.inject("drop")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+    assert snap.flows[0].status == "alert"
+    assert snap.flows[0].detected_at == clock.t
+
+
 def test_rescaling_clears_stale_alerts_so_remediate_then_raises():
     clock = FakeClock()
     sim = SimulationState(clock=clock)

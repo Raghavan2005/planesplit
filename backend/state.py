@@ -122,6 +122,7 @@ class FlowSnapshot:
     fault_node: Optional[str]
     reason: Optional[str]
     packet_size_bytes: int
+    detected_at: Optional[float] = None  # Alert.detected_at; None unless status == "alert"
 
     def to_dict(self) -> dict:
         return {
@@ -133,6 +134,7 @@ class FlowSnapshot:
             "fault_node": self.fault_node,
             "reason": self.reason,
             "packet_size_bytes": self.packet_size_bytes,
+            "detected_at": self.detected_at,
         }
 
 
@@ -401,6 +403,7 @@ class SimulationState:
                 fault_node=alert.responsible_router if alert else None,
                 reason=alert.reason if alert else None,
                 packet_size_bytes=_packet_size_for(flow, now, self.min_packet_size, self.max_packet_size),
+                detected_at=alert.detected_at if alert else None,
             ))
 
         root_causes = [
