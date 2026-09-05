@@ -18,9 +18,11 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { computeNodePositions, computeBaseLinks } from './components/scene/layout'
 import { BaseInfrastructure } from './components/scene/BaseInfrastructure'
 import { ServerRack } from './components/scene/ServerRack'
+import { RouterNode } from './components/scene/RouterNode'
 import { UserCluster } from './components/scene/UserCluster'
 import { Packet } from './components/scene/Packet'
 import { PathLine } from './components/scene/PathLine'
+import { nodeKindFor, statusForNode, isResponsibleForActiveFault } from './components/topologyStatus'
 import {
   colors,
   font,
@@ -455,11 +457,17 @@ export default function App() {
     send({ action: 'update_route', fault: preset.fault, target_server_id: null })
   }
 
-  // The only router this demo ever mutates is "Users" — the per-node fault
-  // visual always targets it, whether or not the backend has escalated to a
-  // formal Alert yet (fault_node from the backend is only set once status
-  // is 'alert', but the visual should already react during "tolerated").
-  const visualFaultNode = requestedFault !== 'none' ? 'Users' : null
+  // Real, per-node fault targeting: once the backend raises a formal Alert,
+  // isResponsibleForActiveFault reflects its actual reported
+  // responsible_router (Alert.responsible_router / FlowSnapshot.fault_node)
+  // rather than an assumption. Before that (the "tolerated" grace-window
+  // period, where fault_node isn't set yet), "Users" is the one router this
+  // fault model structurally always mutates first (every inject() call
+  // pushes its route change through Users' FIB — a real architectural fact
+  // from backend/state.py, not a visual guess), so the in-flight visual
+  // targets it specifically while any flow is tolerated/alerting.
+  const usersHasInFlightFault = requestedFault !== 'none' &&
+    flows.some(f => f.status === 'tolerated' || f.status === 'alert')
 
   // Worst-case status across every server, for the single top-level status
   // banner — per-server detail still shown in full below it.
@@ -705,18 +713,27 @@ export default function App() {
         {/* Base Infrastructure Cables */}
         <BaseInfrastructure nodePositions={nodePositions} links={baseLinks} />
 
-        {/* Routers — status comes from that node's own flow (if it is a
-            backend server) so each rack's color is that server's real
-            state, not a copy of the shared "Users" fault indicator. */}
-        {Object.entries(nodePositions).map(([name, pos]) => (
-          <ServerRack
-            key={name}
-            name={name}
-            position={pos}
-            faultType={name === visualFaultNode ? requestedFault : 'none'}
-            status={flowByServerId[name]?.status ?? null}
-          />
-        ))}
+        {/* Routers — a backend server's status comes straight from its own
+            FlowSnapshot; Firewall/AWS_ALB/Users now get a real status too
+            (statusForNode scans every flow's actual cp_trace/dp_trace for
+            that node id), and the fault-flash targets whichever node is
+            really reported responsible, not a hardcoded assumption. */}
+        {Object.entries(nodePositions).map(([name, pos]) => {
+          const kind = nodeKindFor(name)
+          const status = flowByServerId[name]?.status ?? statusForNode(name, flows)
+          const isFaultOrigin = isResponsibleForActiveFault(name, flows) ||
+            (name === 'Users' && usersHasInFlightFault)
+          const faultType = isFaultOrigin ? requestedFault : 'none'
+
+          if (kind === 'gateway' || kind === 'router') {
+            return (
+              <RouterNode key={name} kind={kind} name={name} position={pos} faultType={faultType} status={status} />
+            )
+          }
+          return (
+            <ServerRack key={name} name={name} position={pos} faultType={faultType} status={status} />
+          )
+        })}
 
         {/* Population indicator at the shared ingress */}
         <UserCluster position={nodePositions.Users} count={numUsers} />

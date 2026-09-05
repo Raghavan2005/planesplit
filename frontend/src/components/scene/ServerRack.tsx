@@ -2,21 +2,20 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Billboard, Text } from '@react-three/drei'
 import type * as THREE from 'three'
+import { applyStatusGlowColor, type FaultType, type GlowStatus } from './statusGlow'
 
 // Color is driven by two independent signals: `faultType` (the fault the
-// user actually requested, only ever non-'none' at the shared ingress node
-// that's the target of the injection — e.g. "Users") and `status`, which is
-// each individual backend server's OWN FlowSnapshot.status. Before this,
-// every server box downstream of the fault stayed generic cyan regardless
-// of whether that specific server's flow was alerting — only the shared
-// "Users" indicator ever changed color. Now a server that is itself
-// tolerated/alerting flashes amber/red even though the fault visual is
-// anchored elsewhere, so each rack honestly reflects its own state.
+// user actually requested, real per-node now via
+// components/topologyStatus.ts::isResponsibleForActiveFault rather than a
+// hardcoded "always Users") and `status`, each individual server's OWN
+// FlowSnapshot.status. A server that is itself tolerated/alerting flashes
+// amber/red even though the fault visual is anchored elsewhere, so each
+// rack honestly reflects its own state.
 interface ServerRackProps {
   name: string
   position: [number, number, number]
-  faultType: 'none' | 'delay' | 'drop' | 'corrupt'
-  status: 'synced' | 'tolerated' | 'alert' | null
+  faultType: FaultType
+  status: GlowStatus
 }
 
 export function ServerRack({ name, position, faultType, status }: ServerRackProps) {
@@ -24,25 +23,7 @@ export function ServerRack({ name, position, faultType, status }: ServerRackProp
 
   useFrame(({ clock }) => {
     if (!glowRef.current) return
-    if (faultType === 'delay') {
-      const pulse = (Math.sin(clock.getElapsedTime() * 10) + 1) / 2
-      glowRef.current.color.setRGB(1, 0.8 * pulse, 0)
-    } else if (faultType === 'drop' || faultType === 'corrupt') {
-      const flash = clock.getElapsedTime() % 0.5 > 0.25 ? 1 : 0.2
-      glowRef.current.color.setRGB(flash, 0, 0)
-    } else if (status === 'alert') {
-      // This specific server's own DP has diverged past the grace
-      // window — red flash, same visual language as an injected fault.
-      const flash = clock.getElapsedTime() % 0.5 > 0.25 ? 1 : 0.2
-      glowRef.current.color.setRGB(flash, 0, 0)
-    } else if (status === 'tolerated') {
-      const pulse = (Math.sin(clock.getElapsedTime() * 10) + 1) / 2
-      glowRef.current.color.setRGB(1, 0.8 * pulse, 0)
-    } else {
-      // Normal cyan — synced (or a non-flow node like Firewall/AWS_ALB
-      // with no fault targeting it).
-      glowRef.current.color.setRGB(0.2, 0.74, 0.97) // #38bdf8
-    }
+    applyStatusGlowColor(glowRef.current.color, clock.getElapsedTime(), faultType, status)
   })
 
   return (
