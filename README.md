@@ -71,7 +71,18 @@ Network.trace_actual(pkt)    ──►  walks the FIB chain  ──┼──► 
                                                           │                                        flow, responsible_router,
                                                           │                                        expected_path, actual_path,
                                                           │                                        reason)
+                                                                       │
+                                          ┌────────────────────────────┴───────────────────────────┐
+                                          ▼                                                          ▼
+                          correlate(alerts) [added-value]                    Remediator.remediate(alert, now) [added-value]
+                          ─────────────────────────────                      ────────────────────────────────
+                          groups Alerts by responsible_router                reads the correct next_hop straight from the
+                          → RootCauseReport (1 shared cause,                 flow's own RIB entry (never faulted) and
+                            not N separate-looking alerts)                   replays it through one clean apply() call
 ```
+
+The two branches at the bottom are **not** part of the PS31 baseline — see
+"Added-value innovations" below.
 
 ## Project layout
 
@@ -79,7 +90,8 @@ Network.trace_actual(pkt)    ──►  walks the FIB chain  ──┼──► 
 planesplit/
 ├── core/            Packet, Router (RIB/FIB + longest-prefix-match), Network (path tracing)
 ├── faults/           UpdateChannel — the fault injector (DELAY / DROP / CORRUPT), GRACE_WINDOW_SECONDS
-├── verify/            prober.py (boundary-aware probe generation), verifier.py (Alert, per-flow grace-window check)
+├── verify/            prober.py (boundary-aware probe generation), verifier.py (Alert, per-flow grace-window check),
+│                       correlator.py (added-value: group alerts by root cause), remediator.py (added-value: auto-fix)
 ├── cli/              demo.py — one-command runnable demo
 ├── scenarios/         definitions.py — shared, deterministic scenario definitions (used by both the CLI and the tests)
 ├── tests/             58 tests: unit (core, faults, verifier, remediator, correlator) + integration (all 6 scenarios) + repeatability + CLI smoke
@@ -139,6 +151,76 @@ by full evidence for any alert raised — not just "something diverged":
 | 4 | True negative (steady state) | A converged, unchanging network never alerts — the baseline that proves the verifier isn't crying wolf |
 | 5 | Concurrent independent flows | Two unrelated, overlapping legitimate changes on different flows don't interfere with each other's grace window |
 | 6 | Route flapping | Five rapid legitimate changes to the *same* flow never alert mid-flap, and the final state settles correctly |
+
+## Added-value innovations
+
+Two capabilities beyond what PS31 literally asks for. Both are deliberately
+documented separately in `docs/INNOVATION.md`, kept out of
+`docs/REQUIREMENTS.md`'s R1–R13 traceability matrix, and excluded from
+`ALL_SCENARIOS`/`SCENARIO_BY_NUMBER` (the six scenarios above) — so neither
+is ever confused with the literal PS text or mistaken for a required
+scenario. Both are fully deterministic: no LLM, no invented confidence
+scores, no candidate-fix guessing (see `docs/INNOVATION.md` for why that's
+a deliberate design constraint, not a missed opportunity).
+
+### Multi-flow root-cause correlation
+
+```bash
+python -m planesplit.cli.demo --correlation-demo
+```
+
+Without this, if one broken router takes down 10 flows, `Verifier.check()`
+(which evaluates every flow independently, by design) produces 10 separate
+`Alert` objects — alert fatigue, hiding the fact that there's really one
+root cause. `correlate(alerts)` groups alerts by `Alert.responsible_router`
+into a `RootCauseReport`. This is an **exact** grouping, not a heuristic
+guess: the fault model only ever targets one router per update, so two
+alerts naming the same router are the same deterministic fact observed
+twice, not a coincidence worth scoring a confidence number on. The demo
+corrupts two independent flows through the same router and shows both
+alerts collapsed into one report:
+
+```text
+Root Cause Analysis
+2 flows (10.0.2.0/24, 10.0.3.0/24) all diverge at the same router: A.
+Reported as one shared root cause instead of separate, seemingly
+unrelated alerts.
+```
+
+`verify/correlator.py` · `tests/test_correlator.py` (5 tests) · full design
+rationale (including why the *general* fault-localization problem is
+NP-hard and why this system's narrower version isn't) in
+`docs/INNOVATION.md` "Innovation 1".
+
+### Closed-loop deterministic remediation
+
+```bash
+python -m planesplit.cli.demo --remediation-demo
+```
+
+Detection alone still leaves a human to type in the fix by hand.
+`Remediator.remediate(alert, now)` closes that loop: since the RIB is
+*never* faulted (only `UpdateChannel.apply()` can corrupt a FIB), the
+correct value for any alerted flow already exists, uncorrupted, in that
+flow's own RIB entry. Remediation is therefore "read the value that was
+never wrong, and write it to the place that was" — one more `apply()` call
+made with a clean fault mode — not a diagnostic step choosing among
+candidate fixes. The demo reproduces Scenario 3's exact corruption, then
+fixes it and re-probes:
+
+```text
+| Remediation Demo | T=3.0s (corrupted FIB entry)      | 10.0.2.0/24 | A -> D -> C | A            | ALERT |
+| Remediation Demo | T=3.0s (after auto-remediation)   | 10.0.2.0/24 | A -> D -> C | A -> D -> C  | PASS  |
+```
+
+If the same router breaks again later, nothing silently re-patches it
+forever: `remediate()` reuses `Verifier`'s existing per-flow grace-window
+logic (via `push_legitimate_change`), so a persistent, recurring fault
+correctly produces a fresh `Alert` instead of being hidden — see
+`tests/test_remediator.py`'s two escalation tests for the exact proof.
+
+`verify/remediator.py` · `tests/test_remediator.py` (6 tests) · full
+design rationale in `docs/INNOVATION.md` "Innovation 2".
 
 ## Reset
 
