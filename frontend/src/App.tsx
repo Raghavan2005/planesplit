@@ -332,6 +332,14 @@ const disabledButtonStyle = {
   cursor: 'not-allowed',
 };
 
+// Three meaningful colors (cyan=primary action, amber=degraded, red=fault)
+// plus one neutral secondary style, instead of a different neon hue per
+// button. `buttonStyle` above stays the "primary" look unmodified so
+// existing call sites that don't opt into a variant are unaffected.
+const dangerButtonStyle = { ...buttonStyle, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)' };
+const warningButtonStyle = { ...buttonStyle, color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)', background: 'rgba(251, 191, 36, 0.1)' };
+const secondaryButtonStyle = { ...buttonStyle, color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.35)', background: 'rgba(148, 163, 184, 0.06)' };
+
 const numberInputStyle = {
   display: 'block',
   width: '100%',
@@ -468,6 +476,40 @@ function ServerDetailCard({ flow }) {
   )
 }
 
+// Tails real, derived events — status transitions from diffing consecutive
+// backend snapshots, plus the literal actions this UI sends (fault
+// injections, scale/reset requests, connection lifecycle). Nothing here is
+// synthesized to look like activity; every line traces back to an actual
+// state change or an actual ws.send() call (see App()'s WS handler and
+// trigger* functions). `filterTag` scopes the view to `system` lines plus
+// whichever server is currently selected, so switching the selected tile
+// switches what's being tailed.
+function LiveConsole({ logs, filterTag }) {
+  const scrollRef = useRef(null)
+  const visible = logs.filter(l => l.tag === 'system' || l.tag === filterTag)
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [visible.length])
+
+  return (
+    <div ref={scrollRef} style={{
+      height: '100%', overflowY: 'auto', boxSizing: 'border-box',
+      fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '11px',
+      padding: '8px 16px', lineHeight: '1.7',
+    }}>
+      {visible.length === 0 && <div style={{ color: '#475569' }}>No events yet.</div>}
+      {visible.map(l => (
+        <div key={l.id} style={{ whiteSpace: 'pre', color: '#cbd5e1' }}>
+          <span style={{ color: '#475569' }}>{l.time}</span>{'  '}
+          <span style={{ color: l.tag === 'system' ? '#38bdf8' : '#a78bfa', fontWeight: 'bold' }}>{l.tag.padEnd(10)}</span>
+          {l.message}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Mirrors backend/state.py's MIN/MAX_SERVERS and MIN/MAX_USERS exactly —
 // the backend clamps regardless, but keeping the input bounds identical
 // here means the number fields never silently let you type a value the
@@ -526,6 +568,31 @@ export default function App() {
   // one instead of leaving the detail card pointing at a server that no
   // longer exists.
   const [selectedServerId, setSelectedServerId] = useState(null)
+  // Real event feed for LiveConsole — every entry traces back to an actual
+  // snapshot diff or an actual ws.send() call below, never synthesized.
+  // Capped at 300 so a long demo session doesn't grow this unbounded.
+  const [logs, setLogs] = useState([])
+  const logIdRef = useRef(0)
+  const logEvent = (tag, message) => {
+    // id/time captured here, at call time — not read from the ref inside
+    // the setLogs updater below. Multiple logEvent calls can be queued
+    // synchronously in one tick (e.g. several servers transitioning at
+    // once); React batches and flushes their updaters together, so an
+    // updater that reads logIdRef.current lazily would see whatever the
+    // ref had climbed to by flush time — the same final value for every
+    // queued update — producing duplicate ids/React keys.
+    logIdRef.current += 1
+    const id = logIdRef.current
+    const time = new Date().toLocaleTimeString([], { hour12: false })
+    setLogs(prev => {
+      const next = [...prev, { id, time, tag, message }]
+      return next.length > 300 ? next.slice(next.length - 300) : next
+    })
+  }
+  // Used only inside the WS onmessage handler below to detect real
+  // transitions between consecutive snapshots — never rendered directly.
+  const prevFlowsRef = useRef([])
+  const prevHasRootCauseRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -540,6 +607,7 @@ export default function App() {
       socket.onopen = () => {
         if (cancelled) return
         setConnectionStatus('open')
+        logEvent('system', 'connected to backend')
       }
 
       socket.onmessage = (event) => {
@@ -549,6 +617,34 @@ export default function App() {
           setRootCauses(data.root_causes || [])
           setNumUsers(data.num_users || 1)
           setHasSnapshot(true)
+
+          // Diff against the previous snapshot for real per-server status
+          // transitions. Only when the server roster is unchanged — a
+          // scale/reset legitimately swaps the whole roster and would
+          // otherwise produce a meaningless burst of "new server" noise
+          // (that's already logged once, directly, by the trigger*
+          // functions below).
+          const prevFlows = prevFlowsRef.current
+          const prevById = Object.fromEntries(prevFlows.map(f => [f.server_id, f]))
+          const sameRoster = prevFlows.length === data.flows.length && data.flows.every(f => prevById[f.server_id])
+          if (sameRoster) {
+            data.flows.forEach(f => {
+              const prev = prevById[f.server_id]
+              if (prev && prev.status !== f.status) {
+                const detail = f.status === 'alert' && f.fault_node ? ` (diverged at ${f.fault_node})` : ''
+                logEvent(f.server_id, `status: ${prev.status} → ${f.status}${detail}`)
+              }
+            })
+          }
+          prevFlowsRef.current = data.flows
+
+          const hasRootCause = (data.root_causes || []).length > 0
+          if (hasRootCause && !prevHasRootCauseRef.current) {
+            const total = data.root_causes.reduce((n, rc) => n + rc.flows.length, 0)
+            const routers = data.root_causes.map(rc => rc.responsible_router).join(', ')
+            logEvent('system', `correlated ${total} alerts under ${routers}`)
+          }
+          prevHasRootCauseRef.current = hasRootCause
         }
       }
 
@@ -556,6 +652,7 @@ export default function App() {
         if (cancelled) return
         setConnectionStatus('closed')
         setHasSnapshot(false)
+        logEvent('system', 'disconnected — retrying in 2s')
         // The backend's tick loop and dev-server restarts are the normal
         // reasons a socket drops in this project (no auth/session to
         // re-establish) — retrying on a short fixed delay is enough,
@@ -585,6 +682,7 @@ export default function App() {
   const triggerUpdate = (fault) => {
     if (!isLive) return
     setRequestedFault(fault)
+    logEvent('system', fault === 'none' ? 'route update requested (sync)' : `fault injected: ${fault}`)
     ws.send(JSON.stringify({ action: 'update_route', fault }))
   }
 
@@ -593,6 +691,7 @@ export default function App() {
     setRequestedFault('none')
     setServerInput(1)
     setUserInput(1)
+    logEvent('system', 'network reset')
     ws.send(JSON.stringify({ action: 'reset' }))
   }
 
@@ -606,6 +705,7 @@ export default function App() {
     setServerInput(servers)
     setUserInput(users)
     setRequestedFault('none')
+    logEvent('system', `scaled to ${servers} servers, ${users} users`)
     ws.send(JSON.stringify({ action: 'scale', num_servers: servers, num_users: users }))
   }
 
@@ -623,6 +723,7 @@ export default function App() {
     setServerInput(servers)
     setUserInput(users)
     setRequestedFault(fault)
+    logEvent('system', `randomized — ${servers} servers, ${users} users, fault=${fault}`)
     ws.send(JSON.stringify({ action: 'scale', num_servers: servers, num_users: users }))
     ws.send(JSON.stringify({ action: 'update_route', fault }))
   }
@@ -663,8 +764,8 @@ export default function App() {
       fontFamily: '"Inter", sans-serif', color: '#f8fafc',
       display: 'grid',
       gridTemplateColumns: '300px 1fr 340px',
-      gridTemplateRows: '72px 1fr',
-      gridTemplateAreas: `"header header header" "left main right"`,
+      gridTemplateRows: '72px 1fr 200px',
+      gridTemplateAreas: `"header header header" "left main right" "console console console"`,
     }}>
 
       {/* Header — title/subtitle on the left, connection status + sponsor
@@ -675,13 +776,16 @@ export default function App() {
         padding: '0 20px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
       }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '20px', letterSpacing: '1px', lineHeight: '1.2', background: 'linear-gradient(90deg, #38bdf8, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            PlaneSplit Diagnostics
-          </h1>
-          <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
-            Control Plane Intent vs Data Plane Reality, in real-time.
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '3px', height: '30px', background: '#38bdf8', borderRadius: '2px' }} />
+          <div>
+            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9' }}>
+              PlaneSplit
+            </h1>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+              Control-plane / data-plane consistency
+            </p>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
           {/* Connection indicator — always visible, never implied by the
@@ -718,19 +822,19 @@ export default function App() {
             UPDATE ROUTE (SYNC)
           </button>
 
-          <button disabled={!isLive} onClick={() => triggerUpdate('delay')} style={isLive ? {...buttonStyle, color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)', background: 'rgba(251, 191, 36, 0.1)'} : disabledButtonStyle}>
+          <button disabled={!isLive} onClick={() => triggerUpdate('delay')} style={isLive ? warningButtonStyle : disabledButtonStyle}>
             INJECT DELAY
           </button>
 
-          <button disabled={!isLive} onClick={() => triggerUpdate('drop')} style={isLive ? {...buttonStyle, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)'} : disabledButtonStyle}>
+          <button disabled={!isLive} onClick={() => triggerUpdate('drop')} style={isLive ? dangerButtonStyle : disabledButtonStyle}>
             INJECT DROP
           </button>
 
-          <button disabled={!isLive} onClick={() => triggerUpdate('corrupt')} style={isLive ? {...buttonStyle, color: '#f97316', borderColor: 'rgba(249, 115, 22, 0.4)', background: 'rgba(249, 115, 22, 0.1)'} : disabledButtonStyle}>
+          <button disabled={!isLive} onClick={() => triggerUpdate('corrupt')} style={isLive ? dangerButtonStyle : disabledButtonStyle}>
             CORRUPT MASK
           </button>
 
-          <button disabled={!isLive} onClick={triggerReset} style={isLive ? {...buttonStyle, color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.4)', background: 'rgba(148, 163, 184, 0.1)', gridColumn: 'span 2'} : {...disabledButtonStyle, gridColumn: 'span 2'}}>
+          <button disabled={!isLive} onClick={triggerReset} style={isLive ? {...secondaryButtonStyle, gridColumn: 'span 2'} : {...disabledButtonStyle, gridColumn: 'span 2'}}>
             RESET NETWORK
           </button>
         </div>
@@ -763,10 +867,10 @@ export default function App() {
             </label>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button disabled={!isLive} onClick={triggerApplyConfig} style={isLive ? {...buttonStyle, color: '#a78bfa', borderColor: 'rgba(167, 139, 250, 0.4)', background: 'rgba(167, 139, 250, 0.1)'} : disabledButtonStyle}>
+            <button disabled={!isLive} onClick={triggerApplyConfig} style={isLive ? buttonStyle : disabledButtonStyle}>
               APPLY CONFIG
             </button>
-            <button disabled={!isLive} onClick={triggerRandomize} style={isLive ? {...buttonStyle, color: '#f472b6', borderColor: 'rgba(244, 114, 182, 0.4)', background: 'rgba(244, 114, 182, 0.1)'} : disabledButtonStyle}>
+            <button disabled={!isLive} onClick={triggerRandomize} style={isLive ? secondaryButtonStyle : disabledButtonStyle}>
               RANDOMIZE
             </button>
           </div>
@@ -900,6 +1004,22 @@ export default function App() {
                 ))}
             </div>
         )}
+      </div>
+
+      {/* Bottom console — tails the currently-selected server's real
+          status transitions plus always-visible system events (fault
+          injections, scale/reset, connection lifecycle). IDE-style
+          bottom panel rather than squeezing a wide log into a sidebar. */}
+      <div style={{
+        gridArea: 'console', display: 'flex', flexDirection: 'column',
+        background: '#05070d', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+      }}>
+        <div style={{ padding: '6px 16px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+          Live Console — tailing {selectedServerId ?? 'system'}
+        </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <LiveConsole logs={logs} filterTag={selectedServerId} />
+        </div>
       </div>
     </div>
   )
