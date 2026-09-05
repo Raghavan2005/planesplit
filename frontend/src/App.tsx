@@ -16,6 +16,18 @@ import { OrbitControls, Stars, Text, Line, Grid, Billboard, Trail } from '@react
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import * as THREE from 'three'
+import {
+  colors,
+  font,
+  status as STATUS_COLOR,
+  statusLabel as STATUS_LABEL,
+  buttonStyle,
+  disabledButtonStyle,
+  dangerButtonStyle,
+  warningButtonStyle,
+  secondaryButtonStyle,
+  numberInputStyle,
+} from './theme'
 
 // Fixed ingress tier: shared by every server regardless of scale.
 // Backend servers (from data.flows[].server_id) are laid out procedurally
@@ -316,60 +328,6 @@ function PathLine({ path, color, offset, nodePositions }) {
 }
 
 // --- UI COMPONENTS ---
-const buttonStyle = {
-  padding: '12px 20px',
-  background: 'rgba(56, 189, 248, 0.1)',
-  // borderWidth/Style/Color kept separate (not the `border` shorthand) so
-  // per-variant overrides below can safely replace just borderColor —
-  // mixing a shorthand base with a longhand override on the same property
-  // is what React warns about at runtime ("conflicting property").
-  borderWidth: '1px',
-  borderStyle: 'solid',
-  borderColor: 'rgba(56, 189, 248, 0.4)',
-  color: '#38bdf8',
-  borderRadius: '6px',
-  cursor: 'pointer',
-  fontWeight: 'bold',
-  letterSpacing: '1px',
-  textTransform: 'uppercase',
-  fontSize: '12px',
-  transition: 'all 0.2s',
-  outline: 'none'
-};
-
-const disabledButtonStyle = {
-  ...buttonStyle,
-  color: '#475569',
-  borderColor: 'rgba(71, 85, 105, 0.3)',
-  background: 'rgba(71, 85, 105, 0.08)',
-  cursor: 'not-allowed',
-};
-
-// Three meaningful colors (cyan=primary action, amber=degraded, red=fault)
-// plus one neutral secondary style, instead of a different neon hue per
-// button. `buttonStyle` above stays the "primary" look unmodified so
-// existing call sites that don't opt into a variant are unaffected.
-const dangerButtonStyle = { ...buttonStyle, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)' };
-const warningButtonStyle = { ...buttonStyle, color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)', background: 'rgba(251, 191, 36, 0.1)' };
-const secondaryButtonStyle = { ...buttonStyle, color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.35)', background: 'rgba(148, 163, 184, 0.06)' };
-
-const numberInputStyle = {
-  display: 'block',
-  width: '100%',
-  marginTop: '4px',
-  padding: '8px 10px',
-  background: 'rgba(2, 6, 23, 0.5)',
-  borderWidth: '1px',
-  borderStyle: 'solid',
-  borderColor: 'rgba(148, 163, 184, 0.3)',
-  borderRadius: '6px',
-  color: '#f8fafc',
-  fontSize: '13px',
-  fontWeight: 'bold',
-  outline: 'none',
-  boxSizing: 'border-box',
-};
-
 function ConnectingOverlay({ connectionStatus }) {
   const isRetrying = connectionStatus === 'closed'
   return (
@@ -377,7 +335,7 @@ function ConnectingOverlay({ connectionStatus }) {
       position: 'absolute', inset: 0, zIndex: 20,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(2, 6, 23, 0.75)', backdropFilter: 'blur(4px)',
-      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+      fontFamily: font.sans,
     }}>
       <div style={{
         background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -402,9 +360,6 @@ function ConnectingOverlay({ connectionStatus }) {
     </div>
   )
 }
-
-const STATUS_COLOR = { synced: '#22c55e', tolerated: '#fbbf24', alert: '#ef4444' }
-const STATUS_LABEL = { synced: 'NETWORK SYNCED', tolerated: 'PROPAGATING (TOLERATED)', alert: 'DIVERGENCE DETECTED' }
 
 // One tile per backend server, colored by that server's own FlowSnapshot.
 // status. Replaces a plain vertical CP/DP text list, which was already an
@@ -508,7 +463,7 @@ function LiveConsole({ logs, filterTag }) {
   return (
     <div ref={scrollRef} style={{
       height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-      fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '11px',
+      fontFamily: font.mono, fontSize: '11px',
       padding: '8px 16px', lineHeight: '1.7',
     }}>
       {visible.length === 0 && <div style={{ color: '#475569' }}>No events yet.</div>}
@@ -870,8 +825,8 @@ export default function App() {
 
   return (
     <div style={{
-      width: '100vw', height: '100vh', background: '#020617', overflow: 'hidden',
-      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', color: '#f8fafc',
+      width: '100vw', height: '100vh', background: colors.bgDeep, overflow: 'hidden',
+      fontFamily: font.sans, color: colors.textPrimary,
       display: 'grid',
       gridTemplateColumns: '300px 1fr 340px',
       gridTemplateRows: '72px 1fr 200px',
@@ -1063,7 +1018,7 @@ export default function App() {
         {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
 
         <Canvas camera={{ position: [0, 10, 16], fov: 50 }}>
-        <color attach="background" args={['#020617']} />
+        <color attach="background" args={[colors.bgDeep]} />
 
         {/* Environment setup */}
         <ambientLight intensity={0.2} />
