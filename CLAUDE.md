@@ -1217,3 +1217,17 @@ Demo reliably.
 The goal is not to have the most code.
 
 The goal is to have the most convincing, technically correct implementation of the exact PS.
+
+---
+
+## 49. TEST, COMMIT, AND UPDATE STATUS AFTER EVERY UNIT OF WORK
+
+This applies to every implementation step, no matter how small — a single function, a module, a bug fix, a doc correction.
+
+After finishing any unit of work:
+
+1. **Run the relevant tests** (`pytest tests/`, or the specific test file touched). Do not move to the next task on a red or unverified test.
+2. **Commit the change** once tests pass, with a message describing what changed and why (not "wip" / "update"). Never batch unrelated changes into one commit.
+3. **Update `docs/STATUS.md`** so it always reflects the actual current state of the repo — what's implemented, what's tested, what's next, and any known-broken state. Treat a stale `STATUS.md` as a bug, the same as a failing test.
+
+Never skip step 3 because "the code speaks for itself" — `STATUS.md` exists precisely so the current state is visible without having to reconstruct it from `git log` or by reading every file. If a change makes `STATUS.md` inaccurate and it isn't updated in the same commit, the work is not done yet.
