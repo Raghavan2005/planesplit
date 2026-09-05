@@ -33,6 +33,7 @@ import { AnalysisPanel } from './components/ui/AnalysisPanel'
 import { LiveConsole } from './components/ui/LiveConsole'
 import { AlertToasts } from './components/ui/AlertToasts'
 import { AlertHistory } from './components/ui/AlertHistory'
+import { FullHistoryModal } from './components/ui/FullHistoryModal'
 import {
   colors,
   font,
@@ -177,6 +178,12 @@ export default function App() {
   const [alertHistory, setAlertHistory] = useState([])
   const alertHistoryIdRef = useRef(0)
   const ALERT_HISTORY_LIMIT = 30
+
+  // Whether the Full History modal (entire `logs` + `requestEvents`,
+  // unfiltered/uncapped-by-viewport) is open — see
+  // components/ui/FullHistoryModal.tsx. Same plain useState pattern as
+  // every other piece of UI-only state in this file.
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   // Logs "connected"/"disconnected" purely from connectionStatus's own
   // transitions (not from inside the hook, which owns transport only).
@@ -797,13 +804,28 @@ export default function App() {
         gridArea: 'console', display: 'flex', flexDirection: 'column',
         background: '#05070d', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
-        <div style={{ padding: '6px 16px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
-          Live Console — tailing {selectedServerId ?? 'system'}
+        <div style={{
+          padding: '6px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+        }}>
+          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>
+            Live Console — tailing {selectedServerId ?? 'system'}
+          </span>
+          <button onClick={() => setHistoryOpen(true)} style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '10px' }}>
+            Full History
+          </button>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
           <LiveConsole logs={logs} filterTag={selectedServerId} />
         </div>
       </div>
+
+      <FullHistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        logs={logs}
+        requestEvents={requestEvents}
+      />
     </div>
   )
 }
