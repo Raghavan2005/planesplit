@@ -32,7 +32,17 @@ class Verifier:
         # Always overwrite — never setdefault-once. A flow that changes 5
         # times in 2 seconds must have its window measured from the 5th
         # change, not the 1st, or Scenario 6 (route flapping) breaks silently.
-        self._last_legitimate_change_at[flow] = now
+        #
+        # The one exception: never let a stale/out-of-order notification
+        # move the timestamp BACKWARDS. now is a virtual clock that only
+        # moves forward in every real caller, so an earlier `now` arriving
+        # after a later one is always a duplicate or reordered event, not a
+        # newer legitimate change — accepting it would shrink the window
+        # for a flow that actually just changed more recently, producing a
+        # false-positive alert instead of a tolerated mismatch.
+        current = self._last_legitimate_change_at.get(flow)
+        if current is None or now >= current:
+            self._last_legitimate_change_at[flow] = now
 
     def check(
         self,

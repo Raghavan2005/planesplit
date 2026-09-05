@@ -2,10 +2,10 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (verification pass complete — REQUIREMENTS.md re-checked against actual code, R7 boundary test gap closed, git history cleaned of Claude attribution)
+**Last updated:** 2026-09-05 (Q2 fully closed — 2 real bugs found and fixed via negative-case testing)
 
 ## Current phase
-M0–M4 complete and independently re-verified: every R1–R13 row in `docs/REQUIREMENTS.md` was re-checked against the actual implementation/test suite (not just re-asserted) and updated from stale "Planned" to "Done" with real file/test references. One genuine gap was found in that pass — R7 called for an explicit grace-window boundary test (`window_end ± ε`) that had never been written — and was fixed immediately (3 new tests in `test_verifier.py`). M5 (polish/stretch) remains optional; a narrative hook and README are already done (see below).
+M0–M4 complete, independently re-verified, and Q2 (negative/edge-case testing) fully closed. Every requirement row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is now Done with real code/test citations — nothing left marked "Planned." Remaining work is explicitly optional M5 stretch (timed demo rehearsal, web viz).
 
 ## Done
 - Problem statement selected and locked: PS31 PlaneSplit (`ps.md`, `docs/DECISION.md`).
@@ -24,18 +24,20 @@ M0–M4 complete and independently re-verified: every R1–R13 row in `docs/REQU
 
 - **M5 (partial, optional)**: root `README.md` added (setup/run/test/demo commands, architecture diagram, scenario table, doc index). Closes `docs/REQUIREMENTS.md` Q3 (one-command start/reset). `cli/demo.py` now opens with a "Why this matters" panel and closes with a "What you just saw" panel, resolving the last unactioned `docs/DEMO.md` jury comment (narrative hook + styling) — the hook deliberately avoids citing any specific unverified incident, per CLAUDE.md §4/§8, and frames the general, documented failure class instead. 3 new CLI smoke tests.
 - **Repo hygiene**: all 12 commits rewritten to remove `Co-Authored-By: Claude` trailers (GitHub was showing Claude as a co-author) and to use the git author email that matches the GitHub account, so commits link to the correct profile. History was force-pushed after a local backup tag; verified via the GitHub API that every commit now shows `author_login: Raghavan2005` with no Claude attribution. Added `CLAUDE.md` §50: no commit may include an AI-attribution footer going forward.
-- **Requirements verification pass**: every R1–R13 and Q1 row in `docs/REQUIREMENTS.md` re-checked against the real codebase and updated from "Planned" to "Done" with actual file/test citations (not planning-time references). Found and closed one real gap: R7's explicit boundary-condition test (`window_end - ε` tolerated, `window_end + ε` and exactly `window_end` alert) had never been written — added as 3 new tests in `test_verifier.py`.
+- **Requirements verification pass**: every R1–R13 and Q1 row in `docs/REQUIREMENTS.md` re-checked against the real codebase and updated from "Planned" to "Done" with actual file/test citations. Found and closed one real gap: R7's explicit boundary-condition test (`window_end - ε` tolerated, `window_end + ε` and exactly `window_end` alert) had never been written — added as 3 tests in `test_verifier.py`.
+- **Q2 closed — negative/edge-case testing** (`test_negative_cases.py`, 11 tests): malformed IP input, missing host attachment, duplicate probes, duplicate/out-of-order legitimate-change notifications, a degenerate `/32` flow, and large/looping topologies. Writing these surfaced **two real bugs, both fixed**:
+  1. `Network._trace()` silently returned an empty/truncated path when a next-hop or host-attachment pointed at an unregistered router id (a broken topology reference), instead of raising. If both RIB and FIB hit the same broken reference, `Verifier.check()` would have read the resulting empty-vs-empty paths as "converged" — hiding the misconfiguration entirely. Now raises `ValueError` immediately.
+  2. `Verifier.push_legitimate_change()` had no protection against an out-of-order/stale call moving `last_legitimate_change_at` backwards, which could shrink a flow's grace window and produce a false-positive alert on a flow that had actually changed more recently. Now ignores any call whose `now` is older than the flow's currently recorded change.
 
 ## In progress
-Nothing. M0–M4 complete, independently re-verified against actual code (not just re-asserted from memory).
+Nothing. M0–M4 complete and Q2 fully closed, all re-verified against actual code.
 
 ## Next up
 Remaining M5 work (optional, per `docs/MILESTONES.md`): a timed rehearsal against `docs/DEMO.md`, and — only if time remains — a JSON snapshot + static web viz. Nothing here is required to consider the submission complete.
 
 ## Known gaps / not yet covered
-- `TEST_PLAN.md` doesn't yet cover malformed/empty input or duplicate/out-of-order probes (tracked as Q2 in `docs/REQUIREMENTS.md`) — the scenario-definition format is settled, so this could be picked up if time allows, but it's not gating anything.
-- Web visualization is stretch-only (M5) and may not be attempted at all if time runs short — this is the planned outcome, not a shortfall.
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
+- Web visualization is stretch-only (M5) and may not be attempted — this is the planned outcome, not a shortfall (see `docs/MVP.md` §3 Exclusions).
 
 ## Test status
-32/32 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py` [including 3 new R7 boundary tests], `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`). No failures, no skips. Working tree clean; local `master` confirmed identical to `origin/master` after the history rewrite and force-push.
+43/43 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`). No failures, no skips. Working tree clean; local `master` confirmed identical to `origin/master`.

@@ -58,7 +58,11 @@ class Alert:
 class Verifier:
     def push_legitimate_change(self, flow: IPv4Network, now: float) -> None: ...
         # (re)sets last_legitimate_change_at for this flow — MUST overwrite on every call,
-        # never setdefault-once, or route-flapping (TEST_PLAN.md Scenario 6) breaks silently
+        # never setdefault-once, or route-flapping (TEST_PLAN.md Scenario 6) breaks silently.
+        # Exception: ignores a call whose `now` is OLDER than the flow's currently recorded
+        # change (an out-of-order/stale notification) — see docs/REQUIREMENTS.md Q2, this
+        # was a real bug (a stale update could move the window backwards and cause a false
+        # positive) found while adding negative-case tests, not a deviation from the rule above.
     def check(self, flow: IPv4Network, intended: list[str], actual: list[str], now: float) -> Alert | None: ...
 ```
 

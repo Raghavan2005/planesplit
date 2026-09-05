@@ -38,7 +38,15 @@ class Network:
         visited: set[str] = set()
         while current is not None and current not in visited and len(packet.trace) < max_hops:
             if current not in self.routers:
-                break
+                # A next-hop (or the host's own attachment router) points at
+                # a router id that was never registered. This is always a
+                # broken topology setup, never a legitimate "no route"
+                # outcome — silently truncating the trace here would let a
+                # misconfigured attachment produce an identical (empty)
+                # intended and actual path, which Verifier.check() would
+                # then read as "converged", hiding the misconfiguration
+                # entirely instead of failing loudly.
+                raise ValueError(f"unknown router id '{current}' in {table} forwarding chain")
             visited.add(current)
             router = self.routers[current]
             current = router.forward(packet, table)
