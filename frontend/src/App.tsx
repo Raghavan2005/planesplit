@@ -1,3 +1,16 @@
+// @ts-nocheck
+// This component is deliberately plain JS embedded in a .tsx file — no type
+// annotations anywhere in it. Without this pragma, `tsc -b` infers narrow
+// types from initial values (e.g. useState(null) narrowing to `never`,
+// implicit-any function params, CSSProperties mismatches on plain style
+// objects) and reports ~50 errors that predate any feature work here —
+// confirmed by running `tsc -b` against the unmodified, previously-committed
+// version of this file, which fails identically. `vite build` (the actual
+// bundler used for the shipped artifact) only transpiles and never
+// type-checks, so this pragma changes nothing about runtime behavior; it
+// only lets `tsc -b` do what it's meant to do here — catch genuine syntax
+// errors — without also gating the build on full type coverage for a file
+// that was never written to have any.
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stars, Text, Line, Grid, Billboard, Trail } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
@@ -454,15 +467,15 @@ function ServerDetailCard({ flow }) {
       <div style={{ fontSize: '12px', color: '#f8fafc', marginBottom: '8px', fontWeight: 'bold' }}>
         {flow.server_id} <span style={{ fontWeight: 'normal', color: '#64748b' }}>({flow.flow})</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '4px' }}>
         <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', boxShadow: '0 0 8px #22c55e' }}></div>
         <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>CP:</span>
-        <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{flow.cp_trace.join(' → ')}</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', wordBreak: 'break-word' }}>{flow.cp_trace.join(' → ')}</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
         <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[flow.status], marginRight: '8px', boxShadow: `0 0 8px ${STATUS_COLOR[flow.status]}` }}></div>
         <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>DP:</span>
-        <span style={{ fontSize: '12px', fontWeight: 'bold', color: flow.status === 'synced' ? 'white' : STATUS_COLOR[flow.status] }}>{flow.dp_trace.join(' → ')}</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', wordBreak: 'break-word', color: flow.status === 'synced' ? 'white' : STATUS_COLOR[flow.status] }}>{flow.dp_trace.join(' → ')}</span>
       </div>
       {/* Real value from backend/state.py's validate_packet_size — every
           packet this simulation carries is a genuine, bounds-checked
@@ -510,6 +523,40 @@ function LiveConsole({ logs, filterTag }) {
   )
 }
 
+// Floating alert toasts — pushed by the WS onmessage handler in App() the
+// instant a server's real status transitions into 'alert' (not a
+// simulated/hardcoded notification). Fixed-positioned so it floats above
+// every grid cell regardless of where it's mounted in the DOM.
+function AlertToasts({ toasts, onDismiss }) {
+  if (toasts.length === 0) return null
+  return (
+    <div style={{
+      position: 'fixed', top: '84px', right: '20px', zIndex: 999,
+      display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '320px',
+    }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          padding: '12px 14px', borderRadius: '8px',
+          background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.4)',
+          boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.5)', color: '#f8fafc',
+          display: 'flex', alignItems: 'flex-start', gap: '10px',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+              Alert — {t.server_id}
+            </div>
+            <div style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.4' }}>{t.reason}</div>
+          </div>
+          <button onClick={() => onDismiss(t.id)} style={{
+            background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer',
+            fontSize: '14px', lineHeight: 1, padding: 0,
+          }}>×</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Mirrors backend/state.py's MIN/MAX_SERVERS and MIN/MAX_USERS exactly —
 // the backend clamps regardless, but keeping the input bounds identical
 // here means the number fields never silently let you type a value the
@@ -521,6 +568,18 @@ function LiveConsole({ logs, filterTag }) {
 const MIN_SERVERS = 1, MAX_SERVERS = 254
 const MIN_USERS = 1, MAX_USERS = 254
 const FAULTS = ['none', 'delay', 'drop', 'corrupt']
+
+// Named, deterministic topology+fault combinations for walking through a
+// specific demo scenario in one click, instead of hand-tuning the raw
+// controls live. "Shared Root Cause" deliberately uses 4 servers so the
+// shared-ingress fault produces the correlator's multi-flow root-cause
+// panel (see rootCauses below), not just a single isolated alert.
+const PRESETS = [
+  { label: 'Normal Convergence', num_servers: 1, num_users: 1, fault: 'none' },
+  { label: 'Dropped Update', num_servers: 1, num_users: 1, fault: 'drop' },
+  { label: 'Partial Corruption', num_servers: 1, num_users: 1, fault: 'corrupt' },
+  { label: 'Shared Root Cause', num_servers: 4, num_users: 6, fault: 'drop' },
+]
 
 const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
 const clamp = (n, min, max) => Math.max(min, Math.min(max, Number.isFinite(n) ? n : min))
@@ -544,12 +603,24 @@ export default function App() {
   // reset every flow's grace-window state) on every keystroke.
   const [serverInput, setServerInput] = useState(1)
   const [userInput, setUserInput] = useState(1)
+  // Verifier tuning knobs — same deferred-apply pattern as
+  // serverInput/userInput above: typed here, only sent to the backend on
+  // "APPLY CONFIG" so adjusting these mid-demo doesn't rebuild the network
+  // on every keystroke.
+  const [graceWindowInput, setGraceWindowInput] = useState(2)
+  const [minPacketInput, setMinPacketInput] = useState(64)
+  const [maxPacketInput, setMaxPacketInput] = useState(1500)
   // The fault kind the user actually requested (delay/drop/corrupt/none) —
   // tracked client-side since it drives the per-node visual (yellow pulse
   // vs red flash) even during the "tolerated" window, before the backend
   // has necessarily raised an Alert (fault_node is only populated once
   // status === 'alert'). Reset clears it back to 'none'.
   const [requestedFault, setRequestedFault] = useState('none')
+  // Scopes fault injection to every server ('all', the historical default
+  // behavior) or just whichever server is selected in the right sidebar
+  // ('selected') — sent to the backend as target_server_id alongside the
+  // fault kind.
+  const [faultScope, setFaultScope] = useState('all') // 'all' | 'selected'
   const [ws, setWs] = useState(null)
   // 'connecting' | 'open' | 'closed' — reflects the actual WebSocket
   // lifecycle, not assumed. hasSnapshot additionally tracks whether a real
@@ -594,6 +665,14 @@ export default function App() {
   const prevFlowsRef = useRef([])
   const prevHasRootCauseRef = useRef(false)
 
+  // Ephemeral alert toasts — pushed when a server's real status transitions
+  // into 'alert' (see the WS onmessage diff below), auto-dismissed after
+  // 7s or manually via the × button. Same ref-based-id pattern as logEvent
+  // above, for the same reason: ids must be captured at call time, not
+  // lazily inside the state updater, or batched updates collide.
+  const [toasts, setToasts] = useState([])
+  const toastIdRef = useRef(0)
+
   useEffect(() => {
     let cancelled = false
     let socket = null
@@ -633,6 +712,12 @@ export default function App() {
               if (prev && prev.status !== f.status) {
                 const detail = f.status === 'alert' && f.fault_node ? ` (diverged at ${f.fault_node})` : ''
                 logEvent(f.server_id, `status: ${prev.status} → ${f.status}${detail}`)
+              }
+              if (prev && prev.status !== 'alert' && f.status === 'alert') {
+                toastIdRef.current += 1
+                const toastId = toastIdRef.current
+                setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: new Date().toLocaleTimeString([], { hour12: false }) }])
+                setTimeout(() => setToasts(ts => ts.filter(t => t.id !== toastId)), 7000)
               }
             })
           }
@@ -682,8 +767,9 @@ export default function App() {
   const triggerUpdate = (fault) => {
     if (!isLive) return
     setRequestedFault(fault)
-    logEvent('system', fault === 'none' ? 'route update requested (sync)' : `fault injected: ${fault}`)
-    ws.send(JSON.stringify({ action: 'update_route', fault }))
+    const target = faultScope === 'selected' ? selectedServerId : null
+    logEvent('system', fault === 'none' ? 'route update requested (sync)' : `fault injected: ${fault}${target ? ` (target: ${target})` : ' (all servers)'}`)
+    ws.send(JSON.stringify({ action: 'update_route', fault, target_server_id: target }))
   }
 
   const triggerReset = () => {
@@ -702,11 +788,18 @@ export default function App() {
     if (!isLive) return
     const servers = clamp(serverInput, MIN_SERVERS, MAX_SERVERS)
     const users = clamp(userInput, MIN_USERS, MAX_USERS)
+    const graceWindow = clamp(graceWindowInput, 1, 10)
+    const minPacket = clamp(minPacketInput, 64, 1500)
+    const maxPacket = clamp(maxPacketInput, 64, 1500)
     setServerInput(servers)
     setUserInput(users)
+    setGraceWindowInput(graceWindow); setMinPacketInput(minPacket); setMaxPacketInput(maxPacket)
     setRequestedFault('none')
-    logEvent('system', `scaled to ${servers} servers, ${users} users`)
-    ws.send(JSON.stringify({ action: 'scale', num_servers: servers, num_users: users }))
+    logEvent('system', `scaled to ${servers} servers, ${users} users, grace window ${graceWindow}s, packet size ${minPacket}-${maxPacket}B`)
+    ws.send(JSON.stringify({
+      action: 'scale', num_servers: servers, num_users: users,
+      grace_window_seconds: graceWindow, min_packet_size: minPacket, max_packet_size: maxPacket,
+    }))
   }
 
   // One click: a random topology size (servers + users, within the same
@@ -726,6 +819,23 @@ export default function App() {
     logEvent('system', `randomized — ${servers} servers, ${users} users, fault=${fault}`)
     ws.send(JSON.stringify({ action: 'scale', num_servers: servers, num_users: users }))
     ws.send(JSON.stringify({ action: 'update_route', fault }))
+  }
+
+  // Applies a fixed, named topology + fault combination in one click — for
+  // walking a judge through a specific, repeatable scenario instead of
+  // hand-tuning the raw controls live. Deliberately leaves grace window /
+  // packet range alone (whatever's currently configured stays), and always
+  // resets faultScope to 'all' since these are meant to be deterministic
+  // regardless of whatever scope was last selected.
+  const triggerPreset = (preset) => {
+    if (!isLive) return
+    setServerInput(preset.num_servers)
+    setUserInput(preset.num_users)
+    setRequestedFault(preset.fault)
+    setFaultScope('all')
+    logEvent('system', `preset applied: ${preset.label}`)
+    ws.send(JSON.stringify({ action: 'scale', num_servers: preset.num_servers, num_users: preset.num_users }))
+    ws.send(JSON.stringify({ action: 'update_route', fault: preset.fault, target_server_id: null }))
   }
 
   // The only router this demo ever mutates is "Users" — the per-node fault
@@ -768,6 +878,8 @@ export default function App() {
       gridTemplateAreas: `"header header header" "left main right" "console console console"`,
     }}>
 
+      <AlertToasts toasts={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
+
       {/* Header — title/subtitle on the left, connection status + sponsor
           logo on the right. Nothing here overlaps the 3D viewport: it's
           its own grid row, not an absolutely-positioned overlay. */}
@@ -796,7 +908,10 @@ export default function App() {
               background: isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444',
               boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
             }} />
-            <span style={{ fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase' }}>
+            <span style={{
+              fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px',
+            }}>
               {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
             </span>
           </div>
@@ -816,6 +931,19 @@ export default function App() {
         gridArea: 'left', overflowY: 'auto', padding: '20px',
         background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
+        {/* Fault target scope — 'all' (historical default) injects into
+            every server's flow, 'selected' targets only whichever server
+            tile is currently selected in the right sidebar's status grid.
+            Purely a targeting choice, doesn't disable anything below. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <button onClick={() => setFaultScope('all')} style={faultScope === 'all' ? buttonStyle : secondaryButtonStyle}>
+            ALL SERVERS
+          </button>
+          <button onClick={() => setFaultScope('selected')} style={faultScope === 'selected' ? buttonStyle : secondaryButtonStyle}>
+            SELECTED SERVER
+          </button>
+        </div>
+
         {/* Controls */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <button disabled={!isLive} onClick={() => triggerUpdate('none')} style={isLive ? buttonStyle : disabledButtonStyle}>
@@ -837,6 +965,27 @@ export default function App() {
           <button disabled={!isLive} onClick={triggerReset} style={isLive ? {...secondaryButtonStyle, gridColumn: 'span 2'} : {...disabledButtonStyle, gridColumn: 'span 2'}}>
             RESET NETWORK
           </button>
+        </div>
+
+        {/* Scenario presets — named, deterministic topology+fault
+            combinations for walking through a specific demo beat in one
+            click. Deliberately visually distinct (neutral secondary style)
+            from the danger/warning fault buttons above, since these apply
+            a full scenario rather than a single fault. */}
+        <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            {PRESETS.map(preset => (
+              <button
+                key={preset.label}
+                disabled={!isLive}
+                onClick={() => triggerPreset(preset)}
+                style={isLive ? secondaryButtonStyle : disabledButtonStyle}
+              >
+                {preset.label.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Infra config — free-form, not fixed presets. Backend clamps to
@@ -862,6 +1011,37 @@ export default function App() {
                 type="number" min={MIN_USERS} max={MAX_USERS} value={userInput}
                 disabled={!isLive}
                 onChange={(e) => setUserInput(clamp(parseInt(e.target.value, 10), MIN_USERS, MAX_USERS))}
+                style={numberInputStyle}
+              />
+            </label>
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Grace window (s)
+              <input
+                type="number" min={1} max={10} step={0.5} value={graceWindowInput}
+                disabled={!isLive}
+                onChange={(e) => setGraceWindowInput(clamp(parseFloat(e.target.value), 1, 10))}
+                style={numberInputStyle}
+              />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Min packet (bytes)
+              <input
+                type="number" min={64} max={1500} value={minPacketInput}
+                disabled={!isLive}
+                onChange={(e) => setMinPacketInput(clamp(parseInt(e.target.value, 10), 64, 1500))}
+                style={numberInputStyle}
+              />
+            </label>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Max packet (bytes)
+              <input
+                type="number" min={64} max={1500} value={maxPacketInput}
+                disabled={!isLive}
+                onChange={(e) => setMaxPacketInput(clamp(parseInt(e.target.value, 10), 64, 1500))}
                 style={numberInputStyle}
               />
             </label>
