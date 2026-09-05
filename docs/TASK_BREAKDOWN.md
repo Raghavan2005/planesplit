@@ -27,7 +27,7 @@ Organized by workstream, not by person — assign however many people you have. 
 | Implement `trace_intended()` (walks RIB chain) | `verify/prober.py` | R10 | Unit: known topology → known expected path |
 | Implement `trace_actual()` (walks FIB chain) | same file | R3, R10 | Unit: same, using FIB |
 
-**Exit criteria to unblock WS4**: both trace functions return correct hop lists on a topology with a deliberately mismatched FIB (manually constructed, not yet via UpdateChannel).
+**Exit criteria to unblock WS4**: both trace functions return correct hop lists on a topology with a deliberately mismatched FIB (manually constructed, not yet via UpdateChannel). **Met**: `UpdateChannel` is now fully implemented (`faults/update_channel.py`) and every `test_scenarios.py` integration test drives the mismatch through it end-to-end, superseding the manually-constructed bootstrap case this note originally described.
 
 ## WS4 — Verifier (depends on WS2 + WS3 — the critical-path, highest-risk piece)
 | Task | Output | PS req | Test |
@@ -37,7 +37,7 @@ Organized by workstream, not by person — assign however many people you have. 
 | Implement `Alert` construction with divergence-point router identification | same file | R9 | Assert alert names exact router + flow |
 | Wire full pipeline: `ControlPlaneManager` → `UpdateChannel` → `Router.fib` → `Prober` → `Verifier` | integration | R1–R10 | `TEST_PLAN.md` Scenario 3 (corruption, full pipeline) |
 
-**Exit criteria to unblock WS5/WS6**: all 5 `TEST_PLAN.md` scenarios pass end-to-end through the full pipeline, not just in isolation.
+**Exit criteria to unblock WS5/WS6**: all `TEST_PLAN.md` scenarios pass end-to-end through the full pipeline, not just in isolation. (Written when the plan had 5 scenarios; Scenario 6 — route flapping — was added afterward per the SRE/QA jury comment. **Met**: all 6 pass, `tests/test_scenarios.py`.)
 
 > **Do this workstream's false-positive test (Scenario 5) before its happy-path tests.** Per `BUILD_PLAN.md` §4 (Risks), a global-instead-of-per-flow grace window is the single most likely bug in this project, and Scenario 5 is the only test that reliably catches it. Building it last means discovering the bug after everything else is already built on top of the wrong assumption.
 
@@ -53,7 +53,7 @@ Organized by workstream, not by person — assign however many people you have. 
 ## WS6 — Automated Test Suite Hardening (depends on WS4, parallel with WS5)
 | Task | Output | PS req | Test |
 |---|---|---|---|
-| Port all 5 `TEST_PLAN.md` scenarios into `pytest` | `tests/test_scenarios.py` | R11, R12, Q2 | `pytest tests/` green |
+| Port all `TEST_PLAN.md` scenarios into `pytest` (6, after Scenario 6 was added) | `tests/test_scenarios.py` | R11, R12, Q2 | `pytest tests/` green |
 | Repeatability regression test (same seed twice → identical output) | `tests/test_repeatability.py` | R13 | `pytest` green, run manually 3x to confirm no flakiness |
 | Unit test coverage for `Router`, `UpdateChannel`, `Verifier` in isolation | `tests/test_*.py` | R1–R9 | `pytest` green |
 

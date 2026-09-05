@@ -21,7 +21,7 @@ Each milestone lists its gating criteria — do not move to the next milestone u
 ## M3 — Verifier + Full Pipeline Integration (WS4) (next ~20% — treat as the critical milestone)
 - Per-flow `FlowState` grace-window tracking, `Verifier.check()` state machine, `Alert` construction with divergence-point identification.
 - Full pipeline wired end-to-end.
-- **Gate**: all 5 `TEST_PLAN.md` scenarios pass end-to-end — **including Scenario 5 (false-positive attempt), built and passing before declaring this milestone done**, per `TASK_BREAKDOWN.md` WS4's explicit ordering note. This is the milestone most likely to run over budget; if it does, everything downstream shrinks, not this one.
+- **Gate**: all `TEST_PLAN.md` scenarios pass end-to-end — **including Scenario 5 (false-positive attempt), built and passing before declaring this milestone done**, per `TASK_BREAKDOWN.md` WS4's explicit ordering note. (Written when the plan had 5 scenarios; Scenario 6 was added afterward — the gate covers all 6 now.) This is the milestone most likely to run over budget; if it does, everything downstream shrinks, not this one. **Met**: all 6 pass, `tests/test_scenarios.py`.
 
 ## M4 — CLI Demo + Test Suite Hardening (WS5 + WS6, parallel) (next ~20%)
 - `rich`-based CLI output for all three probe states (PASS/TOLERATED/ALERT).

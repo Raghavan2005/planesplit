@@ -2,10 +2,10 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (Q2 fully closed — 2 real bugs found and fixed via negative-case testing)
+**Last updated:** 2026-09-05 (M5 timed rehearsal + FINAL_DEMO_SCRIPT.md done; nothing left outstanding)
 
 ## Current phase
-M0–M4 complete, independently re-verified, and Q2 (negative/edge-case testing) fully closed. Every requirement row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is now Done with real code/test citations — nothing left marked "Planned." Remaining work is explicitly optional M5 stretch (timed demo rehearsal, web viz).
+Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case testing) closed, surfacing and fixing 2 real bugs; every row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is Done with real code/test citations; M5's timed rehearsal (`docs/FINAL_DEMO_SCRIPT.md`) is done. The only item not built is the stretch-goal web visualization, which is a deliberate, documented choice, not an oversight (see "Known gaps" below).
 
 ## Done
 - Problem statement selected and locked: PS31 PlaneSplit (`ps.md`, `docs/DECISION.md`).
@@ -29,13 +29,13 @@ M0–M4 complete, independently re-verified, and Q2 (negative/edge-case testing)
   1. `Network._trace()` silently returned an empty/truncated path when a next-hop or host-attachment pointed at an unregistered router id (a broken topology reference), instead of raising. If both RIB and FIB hit the same broken reference, `Verifier.check()` would have read the resulting empty-vs-empty paths as "converged" — hiding the misconfiguration entirely. Now raises `ValueError` immediately.
   2. `Verifier.push_legitimate_change()` had no protection against an out-of-order/stale call moving `last_legitimate_change_at` backwards, which could shrink a flow's grace window and produce a false-positive alert on a flow that had actually changed more recently. Now ignores any call whose `now` is older than the flow's currently recorded change.
 
-## In progress
-Nothing. M0–M4 complete and Q2 fully closed, all re-verified against actual code.
-
 - **M5 timed rehearsal**: `docs/FINAL_DEMO_SCRIPT.md` created (CLAUDE.md §42 requirement, previously missing entirely). Built from an actually-measured run (`--all` wall time: 0.155s; 88 lines of output) rather than guessed pacing — every command and quoted output line in the script was re-run and verified to match real CLI output before being written down. Notes that program runtime isn't the pacing bottleneck (it's all presenter narration) and recommends running scenarios individually live rather than dumping `--all`.
 
+## In progress
+Nothing.
+
 ## Next up
-Nothing required. The one remaining item — a stretch-goal web visualization — is a deliberate choice not to build, not an oversight: see "Known gaps" below.
+Nothing required.
 
 ## Known gaps / not yet covered
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
