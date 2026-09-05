@@ -3,6 +3,7 @@ import sys
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Make the repo root importable regardless of the current working directory,
@@ -13,9 +14,51 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from dispatch import handle_action
 from state import SimulationState
 
-app = FastAPI()
+state = SimulationState()
+clients: list[WebSocket] = []
+
+
+async def broadcast_snapshot() -> None:
+    message = state.snapshot().to_dict()
+    await _broadcast(message)
+
+
+async def _broadcast(message: dict) -> None:
+    # Collect and drop dead sockets within this same call, rather than
+    # relying on the next WebSocketDisconnect from that socket's own receive
+    # loop to notice -- a socket that fails to send here would otherwise
+    # linger in `clients` until it happens to be its own turn to disconnect.
+    dead: list[WebSocket] = []
+    for client in list(clients):
+        try:
+            await client.send_json(message)
+        except Exception:
+            dead.append(client)
+    for client in dead:
+        if client in clients:
+            clients.remove(client)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async def loop():
+        while True:
+            await asyncio.sleep(0.3)
+            if clients:
+                state.tick()
+                await broadcast_snapshot()
+
+    task = asyncio.create_task(loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,18 +71,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-state = SimulationState()
-clients: list[WebSocket] = []
-
-
-async def broadcast_snapshot() -> None:
-    message = state.snapshot().to_dict()
-    for client in list(clients):
-        try:
-            await client.send_json(message)
-        except Exception:
-            pass
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -48,34 +79,30 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.send_json(state.snapshot().to_dict())
     try:
         while True:
-            data = await websocket.receive_json()
-            action = data.get("action")
-            if action == "reset":
-                state.reset()
-            elif action == "update_route":
-                state.inject(data.get("fault", "none"), target_server_id=data.get("target_server_id"))
-            elif action == "scale":
-                state.scale(
-                    data.get("num_servers", 1), data.get("num_users", 1),
-                    grace_window_seconds=data.get("grace_window_seconds"),
-                    min_packet_size=data.get("min_packet_size"),
-                    max_packet_size=data.get("max_packet_size"),
-                )
-            await broadcast_snapshot()
-    except WebSocketDisconnect:
-        clients.remove(websocket)
+            try:
+                raw = await websocket.receive_json()
+            except (ValueError, TypeError):
+                # Malformed JSON text -- reject this one message, keep the
+                # connection alive, same as a validation failure below.
+                await websocket.send_json({"type": "error", "message": "malformed JSON payload"})
+                continue
 
-
-@app.on_event("startup")
-async def start_tick_loop() -> None:
-    async def loop():
-        while True:
-            await asyncio.sleep(0.3)
-            if clients:
-                state.tick()
+            result = handle_action(state, raw)
+            if result is None:
                 await broadcast_snapshot()
-
-    asyncio.create_task(loop())
+            elif result.get("type") == "error":
+                await websocket.send_json(result)
+            else:
+                # A distinct success payload (currently only send_request's
+                # request_event) -- every connected viewer should see the
+                # request travel, matching the shared-world-state model the
+                # rest of this app already uses, then a normal snapshot
+                # broadcast keeps status/recent_requests consistent.
+                await _broadcast(result)
+                await broadcast_snapshot()
+    except WebSocketDisconnect:
+        if websocket in clients:
+            clients.remove(websocket)
 
 
 if __name__ == "__main__":
