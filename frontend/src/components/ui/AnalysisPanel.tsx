@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { FlowSnapshot, RequestEvent, RootCause } from '../../hooks/useSimulationSocket'
 import { nodeKindFor, type NodeKind } from '../topologyStatus'
-import { colors, font, nodeKindColor, requestStatusColor, requestStatusLabel } from '../../theme'
+import { colors, font, nodeKindColor, requestStatusColor, requestStatusLabel, status as STATUS_COLOR } from '../../theme'
+import { generateAgentReview } from '../../agentReview'
 
 // The "full metadata / full analysis" view: every field backend/state.py's
 // snapshot()/send_request() already compute for the selected server, laid
@@ -81,6 +82,8 @@ export function AnalysisPanel({ flow, rootCauses, requestEvents }: AnalysisPanel
       </div>
       <FieldRow label="Reason" value={flow.reason ?? '—'} clamp />
 
+      <AgentReviewSection flow={flow} correlatedGroup={correlatedGroup} />
+
       <SectionTitle small>Request history{requestEvents.length > recentRequests.length ? ` (last ${recentRequests.length} of ${requestEvents.length})` : ''}</SectionTitle>
       <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '3px', overflow: 'hidden' }}>
         {recentRequests.length === 0 ? (
@@ -95,7 +98,10 @@ export function AnalysisPanel({ flow, rootCauses, requestEvents }: AnalysisPanel
   )
 }
 
-function formatElapsed(epochSeconds: number): string {
+// Exported so agentReview.ts can render `detected_at` as the exact same
+// "Xs ago"/"Xm Ys ago" string shown here — one implementation, not two
+// copies that could quietly drift apart.
+export function formatElapsed(epochSeconds: number): string {
   const deltaSeconds = Math.max(0, Date.now() / 1000 - epochSeconds)
   if (deltaSeconds < 60) return `${Math.round(deltaSeconds)}s ago`
   const minutes = Math.floor(deltaSeconds / 60)
@@ -110,10 +116,17 @@ const panelStyle = {
   border: '1px solid rgba(255,255,255,0.05)',
   display: 'flex',
   flexDirection: 'column',
-  gap: '4px',
+  gap: '3px',
   width: '100%',
-  minHeight: 0,
-  overflow: 'hidden',
+  // No `minHeight: 0` / `overflow: hidden` here (there was previously,
+  // before Agent Review/Alert History were added) — that combination let
+  // this panel's parent flex item squeeze it, and specifically its request-
+  // history section, all the way down to a real, verified 0px at the
+  // 1536x864 demo viewport once those two features added real fixed
+  // content above it. See the matching comment on this panel's wrapper div
+  // in App.tsx: the fix is to let this panel take its natural content
+  // height and let the *sidebar's* own overflowY: auto scroll any excess
+  // into view, rather than silently destroying content client-side.
   lineHeight: '1.25',
 } as const
 
@@ -195,6 +208,72 @@ function FieldRow({ label, value, clamp }: { label: string; value: string; clamp
         color: colors.textPrimary, fontWeight: 'bold', textAlign: 'right', wordBreak: 'break-word',
         ...(clamp ? { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const } : {}),
       }}>{value}</span>
+    </div>
+  )
+}
+
+// Deterministic, evidence-only review (see ../../agentReview.ts) — every
+// sentence traces back to fields already on `flow`/`correlatedGroup`, no
+// LLM call and no invented confidence score (docs/INNOVATION.md §3,
+// CLAUDE.md §8/§24/§25). Colored by the flow's own real status so an alert
+// review reads visually distinct from a synced/tolerated one.
+// The evidence list's length is bounded by how many hop-diff/correlation
+// facts a given flow happens to have (0-5ish) -- not unbounded -- but
+// AnalysisPanel's outer panelStyle is deliberately `overflow: hidden` (it's
+// the one panel allowed to shrink under the sidebar's fixed-height siblings,
+// see the panelStyle comment history), so a real alert with a long reason
+// string plus 3+ correlated flows could silently get clipped by the parent
+// rather than by this component's own, visible scrollbar. `headline` is
+// clamped to 2 lines and `evidence` gets its own small bounded max-height +
+// overflowY: auto -- same defensive pattern this codebase already uses for
+// ServerStatusGrid/AlertHistory/request-history -- so if the layout runs
+// out of room, it's *this* list that visibly scrolls, never invisible
+// clipping at the panelStyle boundary.
+function AgentReviewSection({ flow, correlatedGroup }: { flow: FlowSnapshot; correlatedGroup: RootCause | undefined }) {
+  const review = generateAgentReview(flow, correlatedGroup)
+  const accent = STATUS_COLOR[flow.status]
+  return (
+    <div style={{ flexShrink: 0 }}>
+      <SectionTitle small>Agent Review</SectionTitle>
+      <div style={{
+        marginTop: '1px', padding: '3px 6px', borderRadius: '6px',
+        background: `${accent}14`, border: `1px solid ${accent}40`,
+      }}>
+        <div
+          title={review.headline}
+          style={{
+            fontSize: '10px', fontWeight: 'bold', color: accent, lineHeight: '1.3', marginBottom: '1px',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
+          {review.headline}
+        </div>
+        {/* Bounded (not unbounded) so a flow with a long reason string plus
+            several correlated flows can't push this box tall enough to
+            starve the panel's own flexible request-history section below —
+            it scrolls internally instead, same defensive pattern as
+            ServerStatusGrid/AlertHistory. Kept deliberately short (~2 lines
+            visible): the full evidence array is still all there, just
+            reachable by scrolling this one small list rather than
+            reserving space for every line up front. */}
+        <ul style={{
+          margin: '0 0 1px 0', padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: '1px',
+          maxHeight: '16px', overflowY: 'auto',
+        }}>
+          {review.evidence.map((line, i) => (
+            <li key={i} style={{ fontSize: '9.5px', color: colors.textSecondary, lineHeight: '1.25' }}>{line}</li>
+          ))}
+        </ul>
+        <div
+          title={review.recommendation}
+          style={{
+            fontSize: '10px', color: colors.textPrimary, fontWeight: 'bold',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
+          → {review.recommendation}
+        </div>
+      </div>
     </div>
   )
 }
