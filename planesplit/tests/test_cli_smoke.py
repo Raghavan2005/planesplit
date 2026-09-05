@@ -14,6 +14,10 @@ def test_main_single_scenario_runs_clean():
     assert main(["--scenario", "2"]) == 0
 
 
+def test_main_remediation_demo_runs_clean():
+    assert main(["--remediation-demo"]) == 0
+
+
 def test_hook_and_closing_panels_render_without_error():
     console = Console(record=True)
     print_hook(console)

@@ -82,7 +82,7 @@ planesplit/
 ├── verify/            prober.py (boundary-aware probe generation), verifier.py (Alert, per-flow grace-window check)
 ├── cli/              demo.py — one-command runnable demo
 ├── scenarios/         definitions.py — shared, deterministic scenario definitions (used by both the CLI and the tests)
-├── tests/             26 tests: unit (core, faults, verifier) + integration (all 6 scenarios) + repeatability
+├── tests/             51 tests: unit (core, faults, verifier, remediator) + integration (all 6 scenarios) + repeatability + CLI smoke
 └── requirements.txt
 
 docs/                 research, architecture decisions, requirements traceability matrix,
@@ -102,16 +102,19 @@ pip install -r planesplit/requirements.txt
 pytest planesplit/tests/
 ```
 
-26 tests, all passing: 7 core-model unit tests, 7 fault-injection/prober
-unit tests, 5 verifier unit tests, 6 full-pipeline integration tests (one
-per `docs/TEST_PLAN.md` scenario), and 1 repeatability test that runs every
-scenario twice and asserts identical output.
+51 tests, all passing, including: 7 core-model unit tests, 7 fault-injection/
+prober unit tests, 8 verifier unit tests, 6 full-pipeline integration tests
+(one per `docs/TEST_PLAN.md` scenario), 11 negative/edge-case tests, 6 tests
+for the added-value remediation feature (`docs/INNOVATION.md`), and
+repeatability + CLI smoke tests that run every scenario/demo twice and
+assert identical output.
 
 ## Run the demo
 
 ```bash
-python -m planesplit.cli.demo --all          # every scenario
-python -m planesplit.cli.demo --scenario 3   # a single scenario by its docs/TEST_PLAN.md number (1-6)
+python -m planesplit.cli.demo --all                # every scenario
+python -m planesplit.cli.demo --scenario 3         # a single scenario by its docs/TEST_PLAN.md number (1-6)
+python -m planesplit.cli.demo --remediation-demo   # added-value auto-remediation demo (docs/INNOVATION.md)
 ```
 
 Output is a color-coded table (PASS / TOLERATED / ALERT per probe) followed
@@ -156,12 +159,13 @@ two full `--all` runs).
 | `docs/TEST_PLAN.md` | The six scenarios above, in full detail |
 | `docs/BUILD_PLAN.md`, `docs/TASK_BREAKDOWN.md`, `docs/MILESTONES.md` | How the build was planned and sequenced |
 | `docs/STATUS.md` | Current state — what's implemented, tested, and next |
+| `docs/INNOVATION.md` | Added-value capabilities beyond the PS31 baseline (multi-flow root-cause correlation, closed-loop deterministic remediation) — never confused with R1–R13 |
 
 ## Known gaps
 
-- Malformed/empty-input and duplicate/out-of-order probe handling isn't
-  covered by an explicit test yet (see `docs/REQUIREMENTS.md` Q2) — the
-  scenario/probe format is now stable enough that this could be added, it
-  just hasn't been prioritized over the core PS-required scenarios.
 - A served web visualization was scoped as a stretch goal only and has not
-  been built — the CLI is the required deliverable and is fully working.
+  been built to the same standard as `planesplit/` — see `docs/STATUS.md`
+  "Known gaps" for the specifics of the `backend/`/`frontend/` prototype.
+- `docs/INNOVATION.md`'s multi-flow root-cause correlation write-up
+  previously claimed an implementation that doesn't exist in this repo —
+  flagged in that doc and in `docs/STATUS.md`, not yet resolved.

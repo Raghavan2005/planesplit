@@ -13,6 +13,7 @@ from planesplit.core.network import Network
 from planesplit.core.router import Router
 from planesplit.faults.update_channel import FaultMode, InjectedFault, UpdateChannel
 from planesplit.verify.prober import probe_flow
+from planesplit.verify.remediator import Remediator, RemediationResult
 from planesplit.verify.verifier import Alert, Verifier
 
 HOST_A = IPv4Address("10.0.0.1")
@@ -150,6 +151,31 @@ def scenario_6_route_flapping() -> list[ProbeResult]:
     results.append(_probe("Scenario 6", f"T={last_change_at + 0.9:.1f}s (within final window)", net, verifier, FLOW_2, HOST_A, last_change_at + 0.9))
     results.append(_probe("Scenario 6", f"T={last_change_at + 2.9:.1f}s (settled)", net, verifier, FLOW_2, HOST_A, last_change_at + 2.9))
     return results
+
+
+def remediation_demo() -> tuple[list[ProbeResult], RemediationResult]:
+    """NOT one of docs/TEST_PLAN.md's numbered scenarios (1-6) — demonstrates
+    the added-value capability in docs/INNOVATION.md "Innovation 2: Closed-
+    Loop Deterministic Remediation". Deliberately excluded from
+    ALL_SCENARIOS/SCENARIO_BY_NUMBER so it never gets confused with the
+    PS31-baseline scenarios those two collections represent.
+
+    Reuses Scenario 3's exact fault (CORRUPT) so the "before" state is the
+    same divergence already proven detectable by test_scenario_3.
+    """
+    net, cpm, channel, verifier = _build_pipeline()
+    update = cpm.push_route(FLOW_1, "A", "D")
+    verifier.push_legitimate_change(FLOW_1, now=0.0)
+    channel.apply(update, InjectedFault(mode=FaultMode.CORRUPT, corrupt_prefixlen_delta=1), now=0.0)
+    channel.tick(3.0)
+
+    before = _probe("Remediation Demo", "T=3.0s (corrupted FIB entry)", net, verifier, FLOW_1, HOST_A, 3.0)
+    assert before.alert is not None  # deterministic fault always reproduces the same alert
+
+    remediation = Remediator(net, cpm, channel, verifier).remediate(before.alert, now=3.0)
+
+    after = _probe("Remediation Demo", "T=3.0s (after auto-remediation)", net, verifier, FLOW_1, HOST_A, 3.0)
+    return [before, after], remediation
 
 
 ALL_SCENARIOS = [

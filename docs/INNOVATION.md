@@ -36,3 +36,60 @@ This is deliberately less sophisticated than Sherlock/SCORE — and that's the h
 ## 5. Implementation
 
 `verify/correlator.py::correlate(alerts) -> list[RootCauseReport]`. See `tests/test_correlator.py` for the demonstrated cases: multiple flows correlated under one router, a lone alert passed through unchanged, and two alerts at *different* routers correctly staying uncorrelated. Demonstrated end-to-end in `scenarios/definitions.py::scenario_7_multi_flow_root_cause()` and rendered by `cli/demo.py` as a "Root Cause Analysis" section whenever more than one alert shares a router.
+
+> **Status check (2026-09-05): none of this section 5 exists in the repo.** `planesplit/verify/correlator.py`, `tests/test_correlator.py`, and `scenario_7_multi_flow_root_cause()` are not present anywhere in the working tree or git history. Sections 1–4 above describe a real, sound design, but the implementation claim in section 5 is false and needs to be either built for real or struck — per `CLAUDE.md` §8/§35, a feature is not "Done" without code and test evidence, and this doc was asserting both without either existing.
+
+---
+
+# Innovation 2: Closed-Loop Deterministic Remediation
+
+**Status: Implemented (2026-09-05).** `verify/remediator.py::Remediator.remediate()`, tested in `tests/test_remediator.py` (6 tests), demonstrated end-to-end via `scenarios/definitions.py::remediation_demo()` and `python -m planesplit.cli.demo --remediation-demo`. Full suite: 51/51 passing. Deliberately kept out of `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER` and out of `docs/REQUIREMENTS.md` — this is not one of R1–R13, and mixing it into either would blur the PS31 baseline with an added-value feature (`CLAUDE.md` §2).
+
+## 1. Understand — what problem this actually solves
+
+Today the system stops at detection: `Verifier.check()` returns an `Alert` with `responsible_router`, `expected_path`, and `actual_path`, and a human has to act on it. That's the correct scope for PS31's literal requirements (R1–R13 are about *verification*, not remediation — see `docs/REQUIREMENTS.md`), but it leaves an obvious next question sitting on the table: once we know exactly which router is wrong and what it should say instead, why does a person still have to type the fix in by hand? Reducing mean-time-to-repair (MTTR), not just mean-time-to-detect, is the natural next capability — and it's the same kind of "added-value, not baseline" feature as multi-flow correlation, so it belongs in this doc under the same discipline: not confused with R1–R13, not claimed as done until it's built.
+
+## 2. Research — what already exists
+
+- **Reconciliation control loops** (Kubernetes controllers, Terraform `apply`, intent-based networking's "observe actual vs. desired, then act to close the gap") are the closest real-world pattern: a controller repeatedly compares live state to declared intent and issues corrective writes when they differ.
+- **Self-healing network products** (e.g. assurance/automation features in commercial SDN controllers) already do exactly this for classes of drift they can safely auto-correct, with escalation to a human for anything they can't confidently fix.
+
+**Engineering inference, not a verified citation** (per `CLAUDE.md` §4): I'm not citing a specific paper or product doc here, just the well-known reconciliation-loop pattern common to the systems above.
+
+## 3. Design — why our version is simpler than "self-healing AI" sounds
+
+It would be easy to oversell this as "an AI agent that fixes outages." That framing is wrong for what this system can honestly support, for two reasons:
+
+**First, the fix requires no inference at all.** `ControlPlaneManager` never lets the RIB itself be faulted — only `UpdateChannel.apply()` can put a wrong entry into a router's FIB (`control_plane.py`: "RIB is never faulted"). That means the *correct* answer for any alerted flow is already sitting, uncorrupted, in `network.routers[alert.responsible_router].rib[alert.flow]`. Remediation isn't "diagnose the problem and choose among possible fixes" — it's "read the value that was never wrong, and write it to the place that was."
+
+**Second, the write-path requires no new mechanism.** `UpdateChannel.apply(update, fault, now)` takes the fault mode as a plain per-call argument — the channel holds no persistent per-router "this router is broken" state (confirmed by reading `faults/update_channel.py`: `_pending` only tracks scheduled delayed updates, nothing about ongoing corruption). So a "clean" corrective write is just one more `apply()` call made with `InjectedFault(mode=FaultMode.NONE)`. There's no fault to "clear" first — the next call simply doesn't request one.
+
+So the actual algorithm is:
+
+```
+remediate(alert):
+    correct_next_hop = network.routers[alert.responsible_router].rib[alert.flow]   # never faulted
+    update = cpm.push_route(alert.flow, alert.responsible_router, correct_next_hop) # RIB rewrite, idempotent
+    channel.apply(update, InjectedFault(mode=FaultMode.NONE), now)                  # the one clean FIB write
+    verifier.push_legitimate_change(alert.flow, now)                                # don't let our own fix look like a new unexplained divergence
+```
+
+No LLM, no scored confidence, no branching over multiple candidate fixes — consistent with `CLAUDE.md` §24 (PS-critical logic must stay deterministic unless the PS itself calls for an LLM, which it doesn't here).
+
+**The one genuine judgment call: don't auto-fix silently forever — and it turned out to need zero new code.** If something keeps re-writing a router's FIB after remediation (a persistent fault, or a rogue process bypassing the controller), a naive "auto-fix on every alert" system would keep silently patching it — hiding a real, ongoing problem from the operator. The design anticipated needing a bespoke retry-counter/escalation policy for this. Building it revealed that's unnecessary: `remediate()` calls `verifier.push_legitimate_change(alert.flow, now)`, which marks the repair instant as the flow's last known-good moment — exactly the same bookkeeping a normal legitimate route change gets. `Verifier.check()` doesn't know or care that the *previous* divergence was fixed by `Remediator` instead of a real controller update; it just applies its existing grace-window rule to whatever happens next. So a re-divergence within the grace window is tolerated (maybe it's transient), and one outside it raises a normal, un-swallowed `Alert` — for free, using a mechanism that already existed and was already tested (`test_verifier.py`). See `test_remediator.py::test_recorruption_within_grace_window_after_remediation_is_tolerated` and `::test_recorruption_after_grace_window_is_realerted_not_silently_swallowed`. No caller-side retry loop, no attempt counter — `Remediator` really is just the one-shot action in section 3's algorithm, nothing more.
+
+## 4. What this buys us
+
+- A judge-facing story that closes the loop: not just "we detect and explain divergence," but "we detect it, prove it with evidence, and correct it through the same architectural path a real controller update would use — never bypassing the RIB/FIB separation that's the whole point of PS31."
+- Still fully deterministic and testable: no invented confidence scores, no fake "AI decided to fix this" narrative (`CLAUDE.md` §8/§25).
+- Composes with Innovation 1 once that's actually built: a correlated multi-flow root cause becomes one remediation call per `responsible_router` instead of one per flow.
+
+## 5. Implementation
+
+- `verify/remediator.py::Remediator.remediate(alert, now) -> RemediationResult`, constructed with `(network, cpm, channel, verifier)`, implementing exactly the algorithm in section 3. `RemediationResult` carries the `alert` it responded to, `router_id`, `restored_next_hop`, and `fixed_at` — no bare "fixed" boolean, per `CLAUDE.md` §13.
+- No bounded-retry/escalation code exists anywhere, in `Remediator` or its callers — see the revised section 3 above for why that turned out to be unnecessary. `remediate()` raises `ValueError` (not a silent no-op) if `alert.responsible_router` has no RIB entry for `alert.flow` at all — a broken alert reference, never a fixable divergence.
+- `tests/test_remediator.py` (6 tests): fixes a CORRUPT fault and re-verification passes; fixes a DROP fault; remediating one flow doesn't disturb another flow's independent grace window (mirrors Scenario 5); raises on a missing RIB entry; a re-divergence within the grace window after remediation is tolerated; a re-divergence outside the grace window after remediation is re-alerted, not swallowed.
+- `scenarios/definitions.py::remediation_demo()` — deliberately not named/numbered as a `scenario_N` and deliberately excluded from `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER`, so it's never mistaken for one of the six PS31-baseline scenarios. Reuses Scenario 3's exact CORRUPT fault so the "before" state is the same divergence `test_scenario_3` already proves detectable.
+- `cli/demo.py --remediation-demo`: renders the before/after probe rows through the existing PASS/TOLERATED/ALERT table, then a dedicated "Auto-Remediation Evidence" panel naming the alert responded to and the exact FIB write made — never a bare "fixed" message.
+- `tests/test_repeatability.py::test_remediation_demo_is_repeatable` and `tests/test_cli_smoke.py::test_main_remediation_demo_runs_clean` extend R13's repeatability guarantee and the CLI smoke-test pattern to this feature.
+- **Known limitation, found while writing the tests**: `Remediator` never removes a stale, narrower FIB entry a `CORRUPT` fault may have left behind under a different key (e.g. a leftover `10.0.2.0/25` entry after the correct `10.0.2.0/24` entry is restored) — it only ensures the correct entry exists, not that no incorrect one coexists with it. This happens to be invisible to the standard boundary probe (the leftover narrower prefix doesn't cover the boundary address), but a probe aimed elsewhere in the range could still observe it. `Remediator` has no way to know what a given fault mode actually wrote, so cleaning this up in general is out of scope here — documented as a known gap rather than silently ignored, consistent with `CLAUDE.md` §44.

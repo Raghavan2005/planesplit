@@ -12,7 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from planesplit.scenarios.definitions import ALL_SCENARIOS, SCENARIO_BY_NUMBER, ProbeResult
+from planesplit.scenarios.definitions import ALL_SCENARIOS, SCENARIO_BY_NUMBER, ProbeResult, remediation_demo
+from planesplit.verify.remediator import RemediationResult
 
 STATUS_STYLE = {
     "PASS": "bold green",
@@ -92,13 +93,45 @@ def render(results: list[ProbeResult], console: Console) -> None:
         console.print("\n[bold green]No alerts raised.[/bold green]")
 
 
+def print_remediation_evidence(result: RemediationResult, console: Console) -> None:
+    a = result.alert
+    console.print(Panel(
+        f"[bold]Alert responded to:[/bold] flow=[bold]{a.flow}[/bold] "
+        f"responsible_router=[bold]{a.responsible_router}[/bold]\n"
+        f"  reason: {a.reason}\n\n"
+        f"[bold]Remediation:[/bold] restored FIB entry at [bold]{result.router_id}[/bold] "
+        f"to next_hop=[bold]{result.restored_next_hop}[/bold] at t={result.fixed_at}s, "
+        "by replaying the RIB's own (never-faulted) intent through one clean "
+        "UpdateChannel.apply() call — no LLM, no inference, no candidate-fix "
+        "scoring. See docs/INNOVATION.md \"Innovation 2\" for the full design "
+        "rationale, including why a persistent re-divergence after this point "
+        "is deliberately re-alerted rather than silently re-patched.",
+        title="Auto-Remediation Evidence", border_style="magenta", expand=False,
+    ))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PlaneSplit demo runner")
     parser.add_argument("--scenario", type=int, choices=sorted(SCENARIO_BY_NUMBER), help="run a single scenario by its docs/TEST_PLAN.md number (1-6)")
     parser.add_argument("--all", action="store_true", help="run every scenario (default if no flag given)")
+    parser.add_argument(
+        "--remediation-demo",
+        action="store_true",
+        help="run the added-value auto-remediation demo (docs/INNOVATION.md Innovation 2) instead of the PS31-baseline scenarios",
+    )
     args = parser.parse_args(argv)
 
     console = Console()
+
+    if args.remediation_demo:
+        results, remediation = remediation_demo()
+        print_hook(console)
+        console.print()
+        render(results, console)
+        console.print()
+        print_remediation_evidence(remediation, console)
+        return 0
+
     scenarios_to_run = ALL_SCENARIOS if (args.all or args.scenario is None) else [SCENARIO_BY_NUMBER[args.scenario]]
 
     all_results: list[ProbeResult] = []
