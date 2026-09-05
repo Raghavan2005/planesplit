@@ -1231,3 +1231,13 @@ After finishing any unit of work:
 3. **Update `docs/STATUS.md`** so it always reflects the actual current state of the repo — what's implemented, what's tested, what's next, and any known-broken state. Treat a stale `STATUS.md` as a bug, the same as a failing test.
 
 Never skip step 3 because "the code speaks for itself" — `STATUS.md` exists precisely so the current state is visible without having to reconstruct it from `git log` or by reading every file. If a change makes `STATUS.md` inaccurate and it isn't updated in the same commit, the work is not done yet.
+
+---
+
+## 50. NEVER ATTRIBUTE COMMITS TO CLAUDE
+
+Commit messages must never include a `Co-Authored-By: Claude ...` trailer, a `Claude-Session:` link, or any other Claude/Anthropic attribution footer. Every commit is authored and attributed solely to the human developer's own configured git identity.
+
+Why: GitHub renders a `Co-Authored-By` trailer as a second contributor avatar on the commit. On this project that showed up as "Claude" appearing as a co-author on every commit, which is not the intended attribution for a solo hackathon submission.
+
+How to apply: end every commit message after the descriptive body — no AI-attribution footer, no session link — unless the user explicitly asks for one to be added back.
