@@ -2,10 +2,24 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-06 (frontend hardening + feature pass complete; empty-state/ts-nocheck/line-count audit confirmed clean; doc corrections finalized)
+**Last updated:** 2026-09-06 (full dashboard hardening plan complete; AWS/GCP documentation-only runbooks added; final full-system verification pass done)
 
 ## Current phase
-The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-verified — see the dated sections below for that history. Beyond the baseline, the `backend/`/`frontend/` web dashboard (a stretch-goal addition, not part of R1–R13) hardening + feature pass is **complete**: backend half (Remediator wiring, `send_request`, Pydantic validation, dispatcher, lifespan/broadcast hardening) and frontend half (theme/component extraction, 2D topology map, real router/gateway node status, discrete request-event animation, `SendRequestButton`/`RemediateButton`, `AnalysisPanel`, 3D/2D toggle, sliders, sidebar-scrolling elimination) are both done and committed. Remaining work is documentation-only: the optional AWS/GCP infrastructure runbooks (Parts 3–4 of the dashboard plan) and a final full-system verification pass.
+The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-verified — see the dated sections below for that history. The `backend/`/`frontend/` web dashboard hardening + feature pass (a stretch-goal addition, not part of R1–R13) is **fully complete**, backend and frontend both, and the optional documentation-only AWS/GCP infrastructure runbooks (`docs/AWS_INFRASTRUCTURE_SETUP.md`, `docs/GCP_INFRASTRUCTURE_SETUP.md`) have been added. The dashboard plan (`step-1-infrastructure-setup-delegated-rocket.md`) has no open items remaining.
+
+**Final verification pass (2026-09-06):**
+- `backend/venv/Scripts/python.exe -m pytest backend/tests planesplit/tests -q` → **127 passed, 0 failed**.
+- `npm run build` in `frontend/` → **0 errors** (`tsc -b && vite build` clean; only a non-blocking "chunk larger than 500kB" advisory from Vite, not an error).
+- Live browser smoke test (Playwright, against the already-running dev server on port 5177 talking to the backend on port 8001 — see note below) at a real 1536×864 viewport:
+  - Reset → scaled to 4 servers/3 users → `SEND TEST REQUEST` on a healthy server returned a real `DELIVERED` result with matching `cp_trace`/`dp_trace`.
+  - Targeted `INJECT DROP` at `Server_2` → real alert with `fault_node: "Users"` and a live verifier `reason` string → `SEND TEST REQUEST` against that faulted server returned a real `DIVERGED` result with a `dp_trace` that actually differed from `cp_trace`.
+  - `REMEDIATE` on the alerted server → real reconvergence (`alert → synced` in the live console, confirmed in both the 2D map and 3D scene).
+  - 3D/2D toggle confirmed visually consistent (same node statuses, same topology) in both directions.
+  - Cross-checked the `AnalysisPanel`'s displayed `reason`/`cp_trace`/`dp_trace`/request-history fields against a raw `ws://localhost:8001/ws` message opened directly via `browser_evaluate` — **exact match**, confirming the panel renders real backend data, not fabricated values.
+  - Scaled to 8 servers/6 users, `CORRUPT MASK` with all-servers fault scope → real shared-root-cause correlation (`root_causes: [{responsible_router: "Users", flows: [...all 8...]}]`) reflected correctly in the UI.
+  - A recursive DOM overflow scan (`overflow-y`/`overflow-x` auto/scroll elements where `scrollHeight/scrollWidth` exceeds `clientHeight/clientWidth`) at 1536×864 returned **zero offenders**, both at 4 servers and again at 8 servers/6 users under an active alert.
+  - Console messages: 0 errors throughout; the only warnings were a benign React-StrictMode double-mount WebSocket warning and a third-party `THREE.Clock` deprecation notice, neither related to this project's code.
+  - **Note on ports:** this environment had two backend processes already running (`0.0.0.0:8000` and `127.0.0.1:8001`) and two frontend dev servers (`5173`, `5177`) left over from prior sessions. The live dev server actually exercised (`5177`) was connected to the backend on **8001**, not the default-`VITE_WS_URL` port 8000 — confirmed by opening a raw WebSocket to each port directly and comparing snapshots. Port 8000's backend was a separate, stale, never-scaled instance. This is an artifact of leftover dev-session state, not a bug in `useSimulationSocket.ts` (whose default `ws://localhost:8000/ws` is correct and used correctly whenever only one backend is running); worth knowing if a future session sees the dashboard apparently "reset" to 1 server/1 user for no reason — check which port the dev server was actually started against.
 
 ## Done
 - Problem statement selected and locked: PS31 PlaneSplit (`ps.md`, `docs/DECISION.md`).
@@ -47,10 +61,10 @@ The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-
   - Verified via a recursive DOM walk (`scrollHeight`/`clientHeight`/`scrollWidth`/`clientWidth` on every element) at 1536x864 with a real live 4-server shared-root-cause alert and 3 sent test requests: zero elements with `overflow-y`/`overflow-x` of `auto`/`scroll` and actual overflowing content. The only remaining `scrollHeight > clientHeight` elements are deliberate single/multi-line ellipsis or `-webkit-line-clamp` truncations (never produce a scrollbar) — confirmed both programmatically and with screenshots. Also re-verified at 24 servers/30 users to confirm the design doesn't regress at higher counts. `npm run build` passes clean (0 errors).
 
 ## In progress
-Nothing in the dashboard hardening plan remains in progress. Optional documentation-only cloud runbooks (`docs/AWS_INFRASTRUCTURE_SETUP.md`, `docs/GCP_INFRASTRUCTURE_SETUP.md`) and the final full-system verification pass are the only remaining items — see "Next up".
+Nothing. The dashboard hardening plan, the AWS/GCP documentation-only runbooks, and the final full-system verification pass are all complete (see the "Final verification pass" entry above).
 
 ## Next up
-The final full-system verification pass: `pytest backend/tests planesplit/tests`, `npm run build` in `frontend/`, and a live browser smoke test covering reset, every fault type, scale up/down, `SendRequestButton` against both healthy and faulted servers in both 3D and 2D views, `RemediateButton` reconvergence, 3D/2D toggle, `AnalysisPanel` cross-checked against a raw WS message, and a recursive zero-scroll check at 1536x864.
+Nothing currently planned. Any future work would be net-new scope: real per-session state isolation (see "Known gaps"), or actually executing the AWS/GCP runbooks against a real cloud account (out of scope for this project's simulator-only design — see the status banners in both runbook docs).
 
 ## Known gaps / not yet covered
 - **Resolved, kept for the record:** `docs/INNOVATION.md`'s §5 ("Innovation 1: Multi-Flow Root-Cause Correlation") previously claimed a real implementation — `verify/correlator.py`, `tests/test_correlator.py`, `scenario_7_multi_flow_root_cause()` — that did not exist anywhere in the repo or git history, a `CLAUDE.md` §8/§35 violation from a prior session. Now actually built (see "Done" above); the doc's implementation section was rewritten to cite the real files/tests.
