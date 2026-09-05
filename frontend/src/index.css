@@ -1,3 +1,7 @@
+@keyframes ps-spin {
+  to { transform: rotate(360deg); }
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -50,20 +54,22 @@
   }
 }
 
+/* App (App.tsx) is a full-viewport 3D scene, not the centered docs/
+   marketing page this rule was originally scaffolded for — it lays out
+   its own absolutely-positioned panels and a 100vw/100vh canvas. A fixed
+   1126px width + margin:0 auto here fought that: 100vw is relative to the
+   real viewport regardless of a narrower centered parent, so the app
+   rendered offset from center with a blank strip on one side and
+   page-level horizontal/vertical scrollbars from the resulting overflow. */
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  width: 100%;
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 h1,
