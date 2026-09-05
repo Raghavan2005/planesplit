@@ -39,7 +39,15 @@ Nothing required.
 
 ## Known gaps / not yet covered
 - `ControlPlaneManager.push_route()`'s relationship to `UpdateChannel.apply()` is an implementation decision not spelled out in `docs/BUILD_PLAN.md` §0's frozen contract (which shows no `now`/fault params on `push_route`): CPM never calls the channel itself — the caller (scenario code) does, immediately after `push_route()` returns the `RouteUpdate`. Documented as an assumption here since no other doc states it explicitly.
-- **Web visualization (topology + animated packet path) was deliberately not built.** It's explicitly scoped as CLI-first-only in `docs/ARCHITECTURE.md` §4 and excluded in `docs/MVP.md` §3 ("No heavy Web UI... a clear, color-coded CLI output is far more reliable"), and CLAUDE.md §37/§45 rank extra polish last. The CLI already satisfies the PS's actual visualization requirement (expected-vs-observed path, evidence, affected entity). Building it anyway would be scope creep against the project's own documented decision — flagged here explicitly rather than silently skipped, so it's a known choice, not a gap that was missed.
+- **`backend/` and `frontend/` — a 3D web visualization matching `docs/UI_PLAN.md`, added to the repo but not yet reconciled with `planesplit/`.** This reverses the earlier "CLI-only" decision (`docs/ARCHITECTURE.md` §4, `docs/MVP.md` §3) — that reversal hasn't been re-recorded as a formal decision yet, only tracked here. Real, known issues, none fixed yet:
+  1. `backend/network.py` **reimplements** `Router`/`Network`/`Packet` from scratch instead of importing the tested `planesplit/core/` classes — a second, unverified copy of logic that already exists, tested, in `planesplit/`.
+  2. **No grace window** — `verify_prefix()` compares control-plane vs data-plane paths immediately with no tolerated-delay concept, which is the actual core mechanism PS31 asks for.
+  3. **Uses a real wall-clock `await asyncio.sleep(2)`** to simulate delay — exactly what `docs/ARCHITECTURE.md` §5's decision record rejected, since it breaks deterministic repeatability (R13).
+  4. **No `Verifier`/`Alert`, no tests** — nothing constructs a PASS/TOLERATED/ALERT verdict server-side with evidence; the frontend gets raw paths only.
+  5. **State accumulates across WebSocket actions** without a reset between them — injecting one fault after another in the same session can leave stale FIB rules in place.
+  6. `CORSMiddleware(allow_origins=["*"], allow_credentials=True)` — browsers reject this combination in strict mode; a real misconfiguration, low risk for a local demo.
+  7. No `requirements.txt` for `backend/` — the venv exists locally but isn't reproducible from the repo alone.
+  - **Not yet decided**: whether to fix `backend/` to import and wrap the real `planesplit` logic (recommended — keeps one tested source of truth) or leave it as an independent prototype.
 
 ## Test status
 43/43 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`). No failures, no skips. Working tree clean; local `master` confirmed identical to `origin/master`.
