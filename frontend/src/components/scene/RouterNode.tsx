@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Billboard, Text } from '@react-three/drei'
-import type * as THREE from 'three'
+import * as THREE from 'three'
 import { applyStatusGlowColor, type FaultType, type GlowStatus } from './statusGlow'
 import type { NodeKind } from '../topologyStatus'
 
@@ -21,14 +21,21 @@ interface RouterNodeProps {
 }
 
 export function RouterNode({ kind, name, position, faultType, status }: RouterNodeProps) {
-  const glowRef = useRef<THREE.MeshBasicMaterial>(null)
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
 
   useFrame(({ clock }) => {
-    if (!glowRef.current) return
-    applyStatusGlowColor(glowRef.current.color, clock.getElapsedTime(), faultType, status)
+    if (!matRef.current) return
+    const c = new THREE.Color()
+    applyStatusGlowColor(c, clock.getElapsedTime(), faultType, status)
+    
+    if (faultType === 'none' && status !== 'alert' && status !== 'tolerated') {
+        matRef.current.color.set(kind === 'gateway' ? '#4c1d3d' : '#0c2f3d')
+        matRef.current.emissive.setRGB(0, 0, 0)
+    } else {
+        matRef.current.color.copy(c)
+        matRef.current.emissive.copy(c).multiplyScalar(0.8)
+    }
   })
-
-  const bodyColor = kind === 'gateway' ? '#4c1d3d' : '#0c2f3d'
 
   return (
     <group position={position}>
@@ -36,24 +43,15 @@ export function RouterNode({ kind, name, position, faultType, status }: RouterNo
         // Gateway/Firewall — a wide, flat enforcement-boundary slab.
         <mesh position={[0, 1, 0]}>
           <boxGeometry args={[2.2, 2, 0.6]} />
-          <meshStandardMaterial color={bodyColor} metalness={0.7} roughness={0.25} />
+          <meshStandardMaterial ref={matRef} metalness={0.7} roughness={0.25} toneMapped={false} />
         </mesh>
       ) : (
         // Router/AWS_ALB — a rounded load-balancing hub.
         <mesh position={[0, 1.2, 0]}>
           <cylinderGeometry args={[0.9, 0.9, 2.4, 24]} />
-          <meshStandardMaterial color={bodyColor} metalness={0.7} roughness={0.25} />
+          <meshStandardMaterial ref={matRef} metalness={0.7} roughness={0.25} toneMapped={false} />
         </mesh>
       )}
-
-      <mesh position={[0, 1.2, kind === 'gateway' ? 0.31 : 0.76]}>
-        {kind === 'gateway' ? (
-          <boxGeometry args={[1.7, 1.5, 0.06]} />
-        ) : (
-          <torusGeometry args={[0.65, 0.08, 12, 32]} />
-        )}
-        <meshBasicMaterial ref={glowRef} toneMapped={false} />
-      </mesh>
 
       <Billboard position={[0, 2.6, 0]}>
         <Text fontSize={0.5} color="#ffffff" outlineWidth={0.05} outlineColor="#000000">

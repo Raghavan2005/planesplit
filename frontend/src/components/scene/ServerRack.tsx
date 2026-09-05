@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { Billboard, Text } from '@react-three/drei'
-import type * as THREE from 'three'
+import * as THREE from 'three'
 import { applyStatusGlowColor, type FaultType, type GlowStatus } from './statusGlow'
 
 // Color is driven by two independent signals: `faultType` (the fault the
@@ -19,23 +19,30 @@ interface ServerRackProps {
 }
 
 export function ServerRack({ name, position, faultType, status }: ServerRackProps) {
-  const glowRef = useRef<THREE.MeshBasicMaterial>(null)
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
 
   useFrame(({ clock }) => {
-    if (!glowRef.current) return
-    applyStatusGlowColor(glowRef.current.color, clock.getElapsedTime(), faultType, status)
+    if (!matRef.current) return
+    const c = new THREE.Color()
+    applyStatusGlowColor(c, clock.getElapsedTime(), faultType, status)
+    
+    // For normal state (cyan), we want the main body to be mostly dark, but when there's an alert, we want the whole body to pulse/flash that color.
+    // Let's just apply it directly. It will make the whole box glow cyan when normal, which might be too bright.
+    // Let's dim the normal cyan for the body.
+    if (faultType === 'none' && status !== 'alert' && status !== 'tolerated') {
+        matRef.current.color.set("#0f172a")
+        matRef.current.emissive.setRGB(0, 0.05, 0.1) // subtle blue
+    } else {
+        matRef.current.color.copy(c)
+        matRef.current.emissive.copy(c).multiplyScalar(0.8)
+    }
   })
 
   return (
     <group position={position}>
       <mesh position={[0, 1.5, 0]}>
         <boxGeometry args={[1.5, 3, 1.5]} />
-        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
-      </mesh>
-
-      <mesh position={[0, 1.5, 0.76]}>
-        <boxGeometry args={[1.2, 2.0, 0.1]} />
-        <meshBasicMaterial ref={glowRef} toneMapped={false} />
+        <meshStandardMaterial ref={matRef} metalness={0.7} roughness={0.2} toneMapped={false} />
       </mesh>
 
       {/* Label — Billboard keeps it facing the camera as OrbitControls'

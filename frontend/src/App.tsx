@@ -223,6 +223,24 @@ export default function App() {
     send({ action: 'reset' })
   }
 
+  // Calls the real backend remediate action (state.py::SimulationState.
+  // remediate -> the tested planesplit Remediator). No optimistic UI flip
+  // here — the button/status only change once a real snapshot confirms it.
+  const triggerRemediate = (serverId) => {
+    if (!isLive) return
+    logEvent(serverId, 'remediation requested')
+    send({ action: 'remediate', server_id: serverId })
+  }
+
+  // Calls the real backend send_request action — fires an actual probe,
+  // verifier check, and delivery check for one server, real pass/fail
+  // result included, not a client-side guess.
+  const triggerSendRequest = (serverId) => {
+    if (!isLive) return
+    logEvent(serverId, 'request sent')
+    send({ action: 'send_request', server_id: serverId })
+  }
+
   // Applies exactly what's in the config fields — clamped client-side to
   // the same bounds the backend enforces, so the number shown in the input
   // never silently diverges from what actually gets applied.
@@ -383,7 +401,7 @@ export default function App() {
             every server's flow, 'selected' targets only whichever server
             tile is currently selected in the right sidebar's status grid.
             Purely a targeting choice, doesn't disable anything below. */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
           <button onClick={() => setFaultScope('all')} style={faultScope === 'all' ? buttonStyle : secondaryButtonStyle}>
             ALL SERVERS
           </button>
@@ -393,7 +411,7 @@ export default function App() {
         </div>
 
         {/* Controls */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
           <button disabled={!isLive} onClick={() => triggerUpdate('none')} style={isLive ? buttonStyle : disabledButtonStyle}>
             UPDATE ROUTE (SYNC)
           </button>
@@ -422,7 +440,7 @@ export default function App() {
             a full scenario rather than a single fault. */}
         <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
             {PRESETS.map(preset => (
               <button
                 key={preset.label}
@@ -443,7 +461,7 @@ export default function App() {
             here silently gets clamped without the field reflecting it. */}
         <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Servers ({MIN_SERVERS}–{MAX_SERVERS})
               <input
@@ -474,7 +492,7 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '10px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Min packet (bytes)
               <input
@@ -494,7 +512,7 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
             <button disabled={!isLive} onClick={triggerApplyConfig} style={isLive ? buttonStyle : disabledButtonStyle}>
               APPLY CONFIG
             </button>
@@ -623,7 +641,7 @@ export default function App() {
           <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
         </div>
 
-        <ServerDetailCard flow={selectedFlow} />
+        <ServerDetailCard flow={selectedFlow} isLive={isLive} onRemediate={triggerRemediate} />
 
         {/* Real output of verify/correlator.py (already tested in
             planesplit/tests/test_correlator.py) — only appears when 2+
