@@ -1,5 +1,13 @@
 # Production-Level Code Review Report
 
+> **Staleness callout (2026-09-06):** this review predates both the `516afea` rewrite that replaced `backend/network.py` with a wrapper over the tested `planesplit` engine, and the backend hardening pass tracked in `docs/STATUS.md`. Point-by-point status as of now:
+> - ✅ **Resolved:** input validation (`backend/schemas.py` + `backend/dispatch.py::handle_action`, Pydantic-validated, no more bare `cmd["action"]`/`KeyError` risk), dead-connection handling (`broadcast_snapshot`/`_broadcast` in `backend/main.py` now proactively drop any socket whose `send_json` raises, within the same call).
+> - ✅ **Resolved (predates this pass, via `516afea`):** `backend/network.py` no longer exists — `backend/state.py` imports the real, tested `planesplit.core`/`planesplit.faults`/`planesplit.verify` classes directly. "Missing Tests" for LPM is also resolved this way: LPM is tested in `planesplit/tests/test_core.py`, not reimplemented in `backend/`.
+> - ⚠️ **Partially resolved:** frontend reconnection logic exists today (a fixed 2s retry) but not yet with exponential backoff — tracked as part of the in-progress frontend pass in `docs/STATUS.md`.
+> - ❌ **Still real, not yet addressed by any pass:** global singleton state (`Session-Based State`) — no per-session isolation between browser connections; monolithic `App.tsx` (now ~1200 lines, not 400 — actively being split as part of the in-progress frontend pass); hardcoded topology/3D layout (`Users`/`Firewall`/`Server`/`AWS_ALB` and their positions are still fixed, not dynamically configurable — this is a deliberate scope choice for the current PS31 demo, not an oversight, but is worth naming here since this review flagged it as a gap).
+>
+> The rest of this document is kept as the original review for historical record — read it with the corrections above in mind, not as current state.
+
 Below is the code review analyzing the current hackathon MVP implementation against strict "Production-Level" software engineering standards. 
 
 ## 1. Backend (`backend/main.py` & `backend/network.py`)

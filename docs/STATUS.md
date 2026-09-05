@@ -2,10 +2,10 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (added Python-vs-C/C++ architecture decision record — see "Done" below)
+**Last updated:** 2026-09-06 (backend hardening pass: Remediator wired in, real user-triggered send_request, WS validation, dead-socket cleanup, lifespan — see "Known gaps" below)
 
 ## Current phase
-Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case testing) closed, surfacing and fixing 2 real bugs; every row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is Done with real code/test citations; M5's timed rehearsal (`docs/FINAL_DEMO_SCRIPT.md`) is done. The only item not built is the stretch-goal web visualization, which is a deliberate, documented choice, not an oversight (see "Known gaps" below).
+The PS31 baseline (M0–M4, R1–R13, Q1–Q3) is complete and independently re-verified — see the dated sections below for that history. Beyond the baseline, the `backend/`/`frontend/` web dashboard (a stretch-goal addition, not part of R1–R13) is mid a hardening + feature pass: backend half done (see "Known gaps"), frontend half (2D topology map, real router/gateway node status, user-triggered request UI, analysis panel, theme/component cleanup) in progress.
 
 ## Done
 - Problem statement selected and locked: PS31 PlaneSplit (`ps.md`, `docs/DECISION.md`).
@@ -39,10 +39,10 @@ Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case tes
 - `docs/FUTURE_VISION.md` — written up an AI-assisted, AWS-aware recommendation-layer idea raised live in jury Q&A (going beyond PS31's detection scope into path/config recommendations). Explicitly marked NOT IMPLEMENTED and kept out of `docs/INNOVATION.md` on purpose, so the one real "claimed but not built" mistake this project already made and fixed (the correlator) isn't repeated for this idea too. Reframes the jury answer's weaker point (multi-LLM voting as a hallucination fix) around its actually-defensible parts: RAG grounding in real recorded evidence, and human review as the real trust gate.
 
 ## In progress
-Nothing.
+Frontend half of the dashboard hardening pass: `frontend/src/theme.ts` token module, `useSimulationSocket` hook extraction, 2D `TopologyMap`, real router/gateway node status, `SendRequestButton`/`RemediateButton`, `AnalysisPanel`, 3D/2D view toggle, grace-window/packet-size sliders.
 
 ## Next up
-Nothing required.
+Once the frontend pass lands: a final full-system verification pass (backend + planesplit test suites, `vite build`, manual smoke test of the complete user-triggered-request flow end-to-end in the browser).
 
 ## Known gaps / not yet covered
 - **Resolved, kept for the record:** `docs/INNOVATION.md`'s §5 ("Innovation 1: Multi-Flow Root-Cause Correlation") previously claimed a real implementation — `verify/correlator.py`, `tests/test_correlator.py`, `scenario_7_multi_flow_root_cause()` — that did not exist anywhere in the repo or git history, a `CLAUDE.md` §8/§35 violation from a prior session. Now actually built (see "Done" above); the doc's implementation section was rewritten to cite the real files/tests.
@@ -55,14 +55,15 @@ Nothing required.
     - `inject()` explicitly clears stale FIB entries left by a prior CORRUPT fault before applying a new one (regression-tested).
     - `main.py`'s CORS config is `allow_origins=["*"], allow_credentials=False` — the unsafe `*` + `credentials=True` combination is not present.
     - `backend/requirements.txt` now pins `fastapi==0.141.1`, `uvicorn[standard]==0.52.4`, `pydantic==2.13.5`, `pytest==9.1.1` (fixed in this pass — previously present but unpinned and missing `pydantic`/`pytest`).
-  - **Real, currently-open gaps** (being closed incrementally in this pass — see commits after 2026-09-05 for progress):
-    1. `planesplit/verify/remediator.py`'s `Remediator` is fully built and tested but never called from `backend/` — no way to actually fix a detected divergence from the dashboard yet.
-    2. No request/schema validation on incoming WS messages — a wrong-typed field can raise uncaught deep inside `state.py` and kill that client's WS loop.
-    3. `broadcast_snapshot()`'s dead-socket cleanup is reactive only (via the next `WebSocketDisconnect`), not proactive.
-    4. `@app.on_event("startup")` is FastAPI-deprecated (should be a `lifespan` context manager).
-    5. No discrete, user-triggered "send a request" action — all traffic is either fault-injection or the recurring background tick; there's no way to fire one request and see a real pass/fail result tied to that action.
-    6. Global singleton `state`/`clients` — no per-session isolation between browser connections (multiple viewers share one simulation). Explicitly out of scope for the current hardening pass.
-    7. `frontend/src/App.tsx` is a single ~1200-line file with hardcoded inline colors and `// @ts-nocheck` (see frontend section below).
+  - **Backend hardening pass, 2026-09-05/06 — closed:**
+    1. ✅ `planesplit/verify/remediator.py`'s `Remediator` is now wired in: `SimulationState.remediate(server_id)` (`backend/state.py`) replays the flow's real, never-faulted RIB intent through it. Reachable end-to-end via a new `"remediate"` WS action. Tracked live per-server `Alert` objects in `self._alerts_by_server`, rebuilt fresh every `snapshot()` call so a rescale can't leave it pointing at torn-down state.
+    2. ✅ Every WS action payload is now validated against a Pydantic model (`backend/schemas.py`) before touching `state.py`, via a pure, independently-tested dispatcher (`backend/dispatch.py::handle_action`). A wrong-typed field or unknown action returns a structured `{"type": "error", ...}` to just the sender instead of raising uncaught inside `state.py`.
+    3. ✅ `broadcast_snapshot()` (and the new event broadcast path) now proactively collects and removes any socket whose `send_json` raises within the same call, rather than waiting for that socket's own next `WebSocketDisconnect`.
+    4. ✅ Startup is now a `lifespan` async context manager (the 0.3s tick-and-broadcast loop's task is created on startup and actually cancelled on shutdown), replacing the deprecated `@app.on_event("startup")`.
+    5. ✅ Added a real, discrete, user-triggered request: `SimulationState.send_request(server_id)` fires one probe via the same `probe_flow`/`Verifier.check` chain `snapshot()` already uses, plus a genuine `Network.delivered()` delivery check, and returns an individually-identified, timestamped `RequestEvent` with a real `delivered`/`diverged`/`dropped` outcome — reachable via a new `"send_request"` WS action, broadcast to every connected client as a `{"type": "request_event", ...}` message, and kept in a capped 50-entry history (`recent_requests`, last 20 included in every snapshot).
+  - **Still open, explicitly out of scope for this pass:**
+    6. Global singleton `state`/`clients` — no per-session isolation between browser connections (multiple viewers share one simulation).
+    7. `frontend/src/App.tsx` is still a single ~1200-line file with hardcoded inline colors and `// @ts-nocheck` — the frontend half of this hardening pass (theme token module, component extraction, 2D topology map, real router/gateway node status, `SendRequestButton`/`RemediateButton`, analysis panel) is tracked separately; see commits after this one for progress.
 
 ## Test status
-58/58 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`, `test_remediator.py`, `test_correlator.py`). No failures, no skips.
+`planesplit/` core: 59/59 tests passing (`test_core.py`, `test_control_and_faults.py`, `test_verifier.py`, `test_scenarios.py`, `test_repeatability.py`, `test_cli_smoke.py`, `test_negative_cases.py`, `test_remediator.py`, `test_correlator.py`) — untouched by the backend hardening pass above. `backend/`: 68/68 tests passing (`test_state.py`, `test_schemas.py`, `test_dispatch.py`, `test_main.py`), including the new `remediate`/`send_request` wiring, Pydantic validation, and dead-socket-cleanup/lifespan coverage. No failures, no skips. `backend/main.py`'s `send_request`→`remediate` flow additionally verified manually end-to-end against a real running server (real WebSocket client, real fault injection, real alert, real diverged/delivered outcomes, real reconvergence) — see the commit wiring `dispatch.py` into `main.py`.
