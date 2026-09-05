@@ -385,6 +385,89 @@ function ConnectingOverlay({ connectionStatus }) {
 const STATUS_COLOR = { synced: '#22c55e', tolerated: '#fbbf24', alert: '#ef4444' }
 const STATUS_LABEL = { synced: 'NETWORK SYNCED', tolerated: 'PROPAGATING (TOLERATED)', alert: 'DIVERGENCE DETECTED' }
 
+// One tile per backend server, colored by that server's own FlowSnapshot.
+// status. Replaces a plain vertical CP/DP text list, which was already an
+// awkward internal scroll at a dozen servers and unusable at the backend's
+// real 254-server ceiling. `auto-fill` + `minmax` packs many tiles per row
+// and wraps, so this stays compact and scrollable instead of growing
+// linearly with server count.
+function ServerStatusGrid({ flows, selectedId, onSelect }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(20px, 1fr))',
+      gap: '4px',
+      maxHeight: '32vh',
+      overflowY: 'auto',
+      padding: '4px 2px',
+    }}>
+      {flows.map(f => (
+        <div
+          key={f.server_id}
+          onClick={() => onSelect(f.server_id)}
+          title={`${f.server_id} — ${f.status}`}
+          style={{
+            aspectRatio: '1',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            background: STATUS_COLOR[f.status],
+            boxShadow: f.server_id === selectedId
+              ? `0 0 0 2px #fff, 0 0 8px ${STATUS_COLOR[f.status]}`
+              : `0 0 6px ${STATUS_COLOR[f.status]}55`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function StatusLegend() {
+  const items = [['synced', 'Synced'], ['tolerated', 'Tolerated'], ['alert', 'Alert']]
+  return (
+    <div style={{ display: 'flex', gap: '14px', marginBottom: '8px' }}>
+      {items.map(([key, label]) => (
+        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: STATUS_COLOR[key] }} />
+          <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Detail for whichever single server is currently selected in the status
+// grid above — same fields the old per-server list item showed (CP/DP
+// trace, packet size), just for one server at a time instead of all of
+// them stacked in a scrolling list.
+function ServerDetailCard({ flow }) {
+  if (!flow) return null
+  return (
+    <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ fontSize: '12px', color: '#f8fafc', marginBottom: '8px', fontWeight: 'bold' }}>
+        {flow.server_id} <span style={{ fontWeight: 'normal', color: '#64748b' }}>({flow.flow})</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', boxShadow: '0 0 8px #22c55e' }}></div>
+        <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>CP:</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{flow.cp_trace.join(' → ')}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[flow.status], marginRight: '8px', boxShadow: `0 0 8px ${STATUS_COLOR[flow.status]}` }}></div>
+        <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>DP:</span>
+        <span style={{ fontSize: '12px', fontWeight: 'bold', color: flow.status === 'synced' ? 'white' : STATUS_COLOR[flow.status] }}>{flow.dp_trace.join(' → ')}</span>
+      </div>
+      {/* Real value from backend/state.py's validate_packet_size — every
+          packet this simulation carries is a genuine, bounds-checked
+          Ethernet frame size (64-1500 bytes), not a placeholder. */}
+      {typeof flow.packet_size_bytes === 'number' && (
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', paddingLeft: '18px' }}>
+          Packet size: <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>{flow.packet_size_bytes} B</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Mirrors backend/state.py's MIN/MAX_SERVERS and MIN/MAX_USERS exactly —
 // the backend clamps regardless, but keeping the input bounds identical
 // here means the number fields never silently let you type a value the
@@ -437,6 +520,12 @@ export default function App() {
   // renders until hasSnapshot is true.
   const [connectionStatus, setConnectionStatus] = useState('connecting')
   const [hasSnapshot, setHasSnapshot] = useState(false)
+  // Which server's detail card is shown in the right sidebar's status
+  // grid. Reconciled below whenever `flows` changes so a reset/rescale
+  // that removes the previously-selected server falls back to the first
+  // one instead of leaving the detail card pointing at a server that no
+  // longer exists.
+  const [selectedServerId, setSelectedServerId] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -560,57 +649,69 @@ export default function App() {
   // fault-injection target.
   const flowByServerId = useMemo(() => Object.fromEntries(flows.map(f => [f.server_id, f])), [flows])
 
+  useEffect(() => {
+    if (!flows.some(f => f.server_id === selectedServerId)) {
+      setSelectedServerId(flows[0]?.server_id ?? null)
+    }
+  }, [flows, selectedServerId])
+
+  const selectedFlow = flowByServerId[selectedServerId] ?? flows[0]
+
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#020617', position: 'relative', overflow: 'hidden' }}>
+    <div style={{
+      width: '100vw', height: '100vh', background: '#020617', overflow: 'hidden',
+      fontFamily: '"Inter", sans-serif', color: '#f8fafc',
+      display: 'grid',
+      gridTemplateColumns: '300px 1fr 340px',
+      gridTemplateRows: '72px 1fr',
+      gridTemplateAreas: `"header header header" "left main right"`,
+    }}>
 
-      {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
-
-      {/* Sponsor credit — light card so the logo's grey/blue reads against the dark canvas background */}
+      {/* Header — title/subtitle on the left, connection status + sponsor
+          logo on the right. Nothing here overlaps the 3D viewport: it's
+          its own grid row, not an absolutely-positioned overlay. */}
       <div style={{
-        position: 'absolute', bottom: 20, right: 20, zIndex: 10,
-        background: 'rgba(248, 250, 252, 0.92)',
-        borderRadius: '10px',
-        padding: '8px 14px',
-        boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)',
+        gridArea: 'header', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 20px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
       }}>
-        <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '28px', display: 'block' }} />
+        <div>
+          <h1 style={{ margin: 0, fontSize: '20px', letterSpacing: '1px', lineHeight: '1.2', background: 'linear-gradient(90deg, #38bdf8, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            PlaneSplit Diagnostics
+          </h1>
+          <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+            Control Plane Intent vs Data Plane Reality, in real-time.
+          </p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          {/* Connection indicator — always visible, never implied by the
+              presence of the panel itself */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444',
+              boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
+            }} />
+            <span style={{ fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase' }}>
+              {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
+            </span>
+          </div>
+          <div style={{
+            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '10px', padding: '6px 12px',
+            boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)',
+          }}>
+            <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '24px', display: 'block' }} />
+          </div>
+        </div>
       </div>
 
-      {/* Main Control Panel (Glassmorphism) */}
+      {/* Left sidebar — fault injection controls + infra config. Fixed
+          width, own scroll region, no longer competing with the 3D scene
+          for screen space. */}
       <div style={{
-        position: 'absolute', top: 30, left: 30, zIndex: 10,
-        fontFamily: '"Inter", sans-serif',
-        background: 'rgba(15, 23, 42, 0.65)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        padding: '30px',
-        borderRadius: '16px',
-        color: '#f8fafc',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-        width: '400px',
-        maxHeight: 'calc(100vh - 60px)',
-        overflowY: 'auto',
+        gridArea: 'left', overflowY: 'auto', padding: '20px',
+        background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
-        <h1 style={{ margin: '0 0 10px 0', fontSize: '24px', letterSpacing: '1px', background: 'linear-gradient(90deg, #38bdf8, #818cf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          PlaneSplit Diagnostics
-        </h1>
-        <p style={{ margin: '0 0 25px 0', fontSize: '13px', color: '#94a3b8', lineHeight: '1.5' }}>
-          Visualizing Control Plane Intent (Hologram) vs Data Plane Reality (Physical) in real-time.
-        </p>
-
-        {/* Connection indicator — always visible, never implied by the
-            presence of the panel itself */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '-14px 0 20px 0' }}>
-          <div style={{
-            width: '8px', height: '8px', borderRadius: '50%',
-            background: isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444',
-            boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
-          }} />
-          <span style={{ fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase' }}>
-            {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
-          </span>
-        </div>
-
         {/* Controls */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
           <button disabled={!isLive} onClick={() => triggerUpdate('none')} style={isLive ? buttonStyle : disabledButtonStyle}>
@@ -670,78 +771,14 @@ export default function App() {
             </button>
           </div>
         </div>
-
-        {/* State Display */}
-        <div style={{ marginTop: '30px', padding: '15px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <h3 style={{ margin: '0 0 15px 0', fontSize: '12px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>
-                Live Telemetry — {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
-            </h3>
-
-            <div style={{ maxHeight: '220px', overflowY: 'auto', marginBottom: '4px' }}>
-                {flows.map(f => (
-                    <div key={f.server_id} style={{ marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>{f.server_id} <span style={{ fontWeight: 'normal', color: '#475569' }}>({f.flow})</span></div>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', boxShadow: '0 0 8px #22c55e' }}></div>
-                            <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>CP:</span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{f.cp_trace.join(' → ')}</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[f.status], marginRight: '8px', boxShadow: `0 0 8px ${STATUS_COLOR[f.status]}` }}></div>
-                            <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>DP:</span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: f.status === 'synced' ? 'white' : STATUS_COLOR[f.status] }}>{f.dp_trace.join(' → ')}</span>
-                        </div>
-                        {/* Real value from backend/state.py's validate_packet_size —
-                            every packet this simulation carries is a genuine, bounds-checked
-                            Ethernet frame size (64-1500 bytes), not a placeholder. */}
-                        {typeof f.packet_size_bytes === 'number' && (
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', paddingLeft: '18px' }}>
-                                Packet size: <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>{f.packet_size_bytes} B</span>
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            <div style={{
-                marginTop: '10px',
-                padding: '10px',
-                textAlign: 'center',
-                borderRadius: '6px',
-                background: `${overallColor}1a`,
-                border: `1px solid ${overallColor}4d`,
-            }}>
-                <span style={{
-                    color: overallColor,
-                    fontWeight: 'bold',
-                    letterSpacing: '2px',
-                    textTransform: 'uppercase',
-                    fontSize: '14px'
-                }}>
-                    {overallStatus === 'alert' ? `${alertCount}/${flows.length} SERVERS ALERTING` : STATUS_LABEL[overallStatus]}
-                </span>
-            </div>
-
-            {/* Real output of verify/correlator.py (already tested in
-                planesplit/tests/test_correlator.py) — only appears when 2+
-                servers share a responsible_router, i.e. the shared-ingress
-                fault case scale() + inject() are built to demonstrate. */}
-            {rootCauses.length > 0 && (
-                <div style={{ marginTop: '12px', padding: '12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '6px' }}>
-                        Root Cause Analysis
-                    </div>
-                    {rootCauses.map((rc, i) => (
-                        <div key={i} style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
-                            <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) all diverge at the same router: <b>{rc.responsible_router}</b>. Reported as one shared root cause, not {rc.flows.length} separate alerts.
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
       </div>
 
-      <Canvas camera={{ position: [0, 10, 16], fov: 50 }}>
+      {/* Main 3D viewport — its own grid cell, so nothing floats over it.
+          The connecting/disconnected overlay is scoped to this cell only. */}
+      <div style={{ gridArea: 'main', position: 'relative' }}>
+        {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
+
+        <Canvas camera={{ position: [0, 10, 16], fov: 50 }}>
         <color attach="background" args={['#020617']} />
 
         {/* Environment setup */}
@@ -807,7 +844,63 @@ export default function App() {
         <EffectComposer disableNormalPass>
             <Bloom luminanceThreshold={1} mipmapBlur intensity={1.5} />
         </EffectComposer>
-      </Canvas>
+        </Canvas>
+      </div>
+
+      {/* Right sidebar — status summary, per-server status grid + detail,
+          and root-cause correlation. Own scroll region, independent of
+          the left sidebar and the 3D viewport. */}
+      <div style={{
+        gridArea: 'right', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px',
+        background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+      }}>
+        <div>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>
+            {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
+          </h3>
+          <div style={{
+              padding: '10px',
+              textAlign: 'center',
+              borderRadius: '6px',
+              background: `${overallColor}1a`,
+              border: `1px solid ${overallColor}4d`,
+          }}>
+              <span style={{
+                  color: overallColor,
+                  fontWeight: 'bold',
+                  letterSpacing: '2px',
+                  textTransform: 'uppercase',
+                  fontSize: '14px'
+              }}>
+                  {overallStatus === 'alert' ? `${alertCount}/${flows.length} SERVERS ALERTING` : STATUS_LABEL[overallStatus]}
+              </span>
+          </div>
+        </div>
+
+        <div>
+          <StatusLegend />
+          <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
+        </div>
+
+        <ServerDetailCard flow={selectedFlow} />
+
+        {/* Real output of verify/correlator.py (already tested in
+            planesplit/tests/test_correlator.py) — only appears when 2+
+            servers share a responsible_router, i.e. the shared-ingress
+            fault case scale() + inject() are built to demonstrate. */}
+        {rootCauses.length > 0 && (
+            <div style={{ padding: '12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px' }}>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '6px' }}>
+                    Root Cause Analysis
+                </div>
+                {rootCauses.map((rc, i) => (
+                    <div key={i} style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
+                        <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) all diverge at the same router: <b>{rc.responsible_router}</b>. Reported as one shared root cause, not {rc.flows.length} separate alerts.
+                    </div>
+                ))}
+            </div>
+        )}
+      </div>
     </div>
   )
 }
