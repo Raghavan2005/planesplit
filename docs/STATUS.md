@@ -2,7 +2,7 @@
 
 > Kept current per `CLAUDE.md` §49 — updated in the same commit as any change that would make it stale. This is the fastest way to see where the project actually stands right now, without reconstructing it from `git log`.
 
-**Last updated:** 2026-09-05 (added-value remediation feature built; correlator documentation-integrity issue found, flagged, and resolved by building the feature for real)
+**Last updated:** 2026-09-05 (added Python-vs-C/C++ architecture decision record — see "Done" below)
 
 ## Current phase
 Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case testing) closed, surfacing and fixing 2 real bugs; every row in `docs/REQUIREMENTS.md` (R1–R13, Q1–Q3) is Done with real code/test citations; M5's timed rehearsal (`docs/FINAL_DEMO_SCRIPT.md`) is done. The only item not built is the stretch-goal web visualization, which is a deliberate, documented choice, not an oversight (see "Known gaps" below).
@@ -33,6 +33,8 @@ Complete. M0–M4 done and independently re-verified; Q2 (negative/edge-case tes
 
 - **Innovation 2 — Closed-Loop Deterministic Remediation** (`docs/INNOVATION.md`): `verify/remediator.py::Remediator.remediate()` corrects a `Verifier`-proven divergence by replaying the RIB's own never-faulted intent through one clean `UpdateChannel.apply()` call — no LLM, no inference, no candidate-fix scoring, matching `CLAUDE.md` §24. 6 new tests in `tests/test_remediator.py`, plus a repeatability test and a CLI smoke test. Demonstrated via `python -m planesplit.cli.demo --remediation-demo`. Deliberately kept out of `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER` and `docs/REQUIREMENTS.md` since it's not one of R1–R13. One known limitation documented in `docs/INNOVATION.md` §5 (a stale narrower FIB entry from a prior CORRUPT fault isn't cleaned up, though it's invisible to the standard boundary probe).
 - **Innovation 1 — Multi-Flow Root-Cause Correlation, built for real** (`docs/INNOVATION.md`): this feature was previously *claimed* as implemented in the doc but didn't exist anywhere in the repo — a real `CLAUDE.md` §8/§35 violation from a prior session (see "Known gaps" history below, now resolved). Now actually built: `verify/correlator.py::correlate(alerts) -> list[RootCauseReport]` groups alerts by `Alert.responsible_router` — an exact grouping, not a probabilistic inference, since the fault model only ever targets one router per update. 5 tests in `tests/test_correlator.py`. Demonstrated via `scenarios/definitions.py::correlation_demo()` and `python -m planesplit.cli.demo --correlation-demo`, rendered as a "Root Cause Analysis" panel. Same exclusion discipline as remediation: not in `ALL_SCENARIOS`/`SCENARIO_BY_NUMBER`, not in `docs/REQUIREMENTS.md`.
+
+- `docs/ARCHITECTURE.md` §6 — added the Python-vs-C/C++ decision record that §3's language choice had stated but never justified, matching §5's existing Mininet-vs-pure-simulation decision format. Doc-only change, no code affected.
 
 ## In progress
 Nothing.

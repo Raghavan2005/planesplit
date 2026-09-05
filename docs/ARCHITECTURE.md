@@ -96,3 +96,56 @@ in-memory tables) needs no rework — this decision was already implicit in
 the architecture, now it's explicit and defensible when a judge asks
 "why didn't you just use Mininet?"
 ```
+
+## 6. Architecture Decision: Python vs. C/C++
+
+`docs/ARCHITECTURE.md` §3 stated the language choice from the start but never justified it — a real gap, since §1/§5 justify every other major choice. Recorded here now, prompted by the same "why not the more realistic/lower-level option" question already answered for Mininet in §5.
+
+```text
+Decision:
+Build the entire simulation in Python 3, not C or C++.
+
+Why:
+What's being graded here is whether the simulation logic is obviously
+correct, fully tested, and demonstrable live — not whether it can forward
+packets at wire speed. Python's stdlib `ipaddress` module gives correct
+CIDR/longest-prefix-match for free (core/router.py's forward()); dataclasses
+and plain dicts make RIB/FIB modeling direct and readable
+(core/router.py, verify/verifier.py's Alert); and there is no compile step
+to fail, and no manual memory management to get wrong, in the minutes
+before a live demo. All of that maps directly onto CLAUDE.md's priority
+order: PS compliance and demo reliability outrank performance (§45), and
+performance work is explicitly deferred until correctness and reliability
+are already proven (§21) — which for this project never becomes necessary,
+because nothing in ps.md or docs/DECISION.md asks for throughput or
+wire-speed realism at all.
+
+Alternatives considered:
+- C (manual struct-based RIB/FIB, hand-rolled LPM over a trie or array)
+- C++ (same, with STL containers and RAII for the table lifecycle)
+
+Why rejected:
+Both buy raw packet-processing throughput and memory-layout control that
+nothing in this PS asks for — §5 above already establishes that even a
+*real* kernel dataplane (Mininet) was rejected in favor of a virtual-clock
+model, so trading up to C/C++ for realism this project isn't pursuing
+would be solving the wrong problem twice over. In exchange, they cost real
+implementation risk that Python's stdlib/dataclasses avoid outright:
+hand-written prefix-matching and manual buffer/table lifetime management
+are exactly the kind of code that segfaults or leaks under a fault
+scenario (DELAY/DROP/CORRUPT) it wasn't first tested against — a crash
+mid-demo is a much worse failure mode than a slow one. This is the same
+reasoning CLAUDE.md §37 gives for not overengineering: added complexity
+that doesn't move any of PS compliance, correctness, or demo reliability
+is a cost with no offsetting benefit here.
+
+Trade-off:
+No low-level realism (no manual memory layout, no wire-speed throughput
+claim, no systems-level packet handling) in exchange for faster iteration,
+a smaller/safer surface for bugs, and zero build-step risk right before a
+live, judged demonstration.
+
+Impact on MVP:
+None — this only makes explicit a choice the codebase already reflects
+throughout core/, faults/, and verify/. No rework required.
+```
