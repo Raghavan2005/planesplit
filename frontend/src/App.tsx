@@ -48,7 +48,7 @@ function BaseInfrastructure({ nodePositions, links }) {
                             [p1[0], 0.2, p1[2]],
                             [p2[0], 0.2, p2[2]]
                         ]}
-                        color="#4a3a26"
+                        color="#1e293b"
                         lineWidth={2}
                         toneMapped={false}
                     />
@@ -91,9 +91,9 @@ function ServerRack({ name, position, faultType, status }) {
           const pulse = (Math.sin(clock.getElapsedTime() * 10) + 1) / 2;
           glowRef.current.color.setRGB(1, 0.8 * pulse, 0);
       } else {
-          // Normal chalk-blue — synced (or a non-flow node like
-          // Firewall/AWS_ALB with no fault targeting it).
-          glowRef.current.color.setRGB(0.557, 0.792, 0.902); // #8ecae6
+          // Normal cyan — synced (or a non-flow node like Firewall/AWS_ALB
+          // with no fault targeting it).
+          glowRef.current.color.setRGB(0.2, 0.74, 0.97); // #38bdf8
       }
   })
 
@@ -102,7 +102,7 @@ function ServerRack({ name, position, faultType, status }) {
       {/* Main body */}
       <mesh position={[0, 1.5, 0]}>
         <boxGeometry args={[1.5, 3, 1.5]} />
-        <meshStandardMaterial color="#3a2a1a" metalness={0.15} roughness={0.7} />
+        <meshStandardMaterial color="#0f172a" metalness={0.9} roughness={0.1} />
       </mesh>
 
       {/* Glowing server blades */}
@@ -118,7 +118,7 @@ function ServerRack({ name, position, faultType, status }) {
           renders mirrored/upside-down (not a fresh bug, a rotating camera
           eventually exposes it). */}
       <Billboard position={[0, 3.5, 0]}>
-        <Text fontSize={0.6} color="#f2f5e8" outlineWidth={0.05} outlineColor="#000000">
+        <Text fontSize={0.6} color="#ffffff" outlineWidth={0.05} outlineColor="#000000">
           {name}
         </Text>
       </Billboard>
@@ -143,7 +143,7 @@ function UserCluster({ position, count }) {
         return (
           <mesh key={i} position={[Math.cos(angle) * r, 0.3 + (i % 3) * 0.25, Math.sin(angle) * r]}>
             <sphereGeometry args={[0.12, 12, 12]} />
-            <meshBasicMaterial color="#b8a8d8" toneMapped={false} />
+            <meshBasicMaterial color="#818cf8" toneMapped={false} />
           </mesh>
         )
       })}
@@ -256,11 +256,11 @@ function Packet({ path, isCP, nodePositions }) {
   if (!curve) return null
 
   const isFailure = !isCP && (path.includes("DROP") || path.includes("LOOP"))
-  const color = isCP ? "#8fd19e" : (isFailure ? "#e2726b" : "#8ecae6") // Green CP, Blue DP Success, Red DP Fail
+  const color = isCP ? "#22c55e" : (isFailure ? "#ef4444" : "#3b82f6") // Green CP, Blue DP Success, Red DP Fail
 
   if (exploded) {
       if (isFailure) {
-          return <Explosion position={endPos} color="#e2726b" />
+          return <Explosion position={endPos} color="#ef4444" />
       }
       return null // On success, the packet is just smoothly absorbed
   }
@@ -273,7 +273,7 @@ function Packet({ path, isCP, nodePositions }) {
         {/* Inner bright core */}
         <mesh scale={0.6}>
           <sphereGeometry args={[0.25, 16, 16]} />
-          <meshBasicMaterial color="#f2f5e8" toneMapped={false} />
+          <meshBasicMaterial color="#ffffff" toneMapped={false} />
         </mesh>
       </mesh>
     </Trail>
@@ -305,57 +305,52 @@ function PathLine({ path, color, offset, nodePositions }) {
 // --- UI COMPONENTS ---
 const buttonStyle = {
   padding: '12px 20px',
-  background: 'rgba(142, 202, 230, 0.15)',
+  background: 'rgba(56, 189, 248, 0.1)',
   // borderWidth/Style/Color kept separate (not the `border` shorthand) so
   // per-variant overrides below can safely replace just borderColor —
   // mixing a shorthand base with a longhand override on the same property
   // is what React warns about at runtime ("conflicting property").
   borderWidth: '1px',
   borderStyle: 'solid',
-  borderColor: 'rgba(142, 202, 230, 0.45)',
-  color: '#8ecae6',
-  borderRadius: '8px',
+  borderColor: 'rgba(56, 189, 248, 0.4)',
+  color: '#38bdf8',
+  borderRadius: '6px',
   cursor: 'pointer',
   fontWeight: 'bold',
   letterSpacing: '1px',
   textTransform: 'uppercase',
   fontSize: '12px',
-  fontFamily: '"Georgia", "Times New Roman", serif',
   transition: 'all 0.2s',
-  outline: 'none',
-  // Neumorphic raised-tray look: dark shadow toward the light source plus a
-  // faint highlight on the opposite edge, instead of a flat fill.
-  boxShadow: '3px 3px 6px rgba(0, 0, 0, 0.35), -1px -1px 3px rgba(232, 236, 216, 0.04)',
+  outline: 'none'
 };
 
 const disabledButtonStyle = {
   ...buttonStyle,
-  color: '#5f6e52',
-  borderColor: 'rgba(95, 110, 82, 0.3)',
-  background: 'rgba(95, 110, 82, 0.1)',
+  color: '#475569',
+  borderColor: 'rgba(71, 85, 105, 0.3)',
+  background: 'rgba(71, 85, 105, 0.08)',
   cursor: 'not-allowed',
-  boxShadow: 'none',
 };
 
 // Three meaningful colors (cyan=primary action, amber=degraded, red=fault)
 // plus one neutral secondary style, instead of a different neon hue per
 // button. `buttonStyle` above stays the "primary" look unmodified so
 // existing call sites that don't opt into a variant are unaffected.
-const dangerButtonStyle = { ...buttonStyle, color: '#e2726b', borderColor: 'rgba(226, 114, 107, 0.45)', background: 'rgba(226, 114, 107, 0.15)' };
-const warningButtonStyle = { ...buttonStyle, color: '#e8c25a', borderColor: 'rgba(232, 194, 90, 0.45)', background: 'rgba(232, 194, 90, 0.15)' };
-const secondaryButtonStyle = { ...buttonStyle, color: '#b9c2a6', borderColor: 'rgba(185, 194, 166, 0.35)', background: 'rgba(185, 194, 166, 0.08)' };
+const dangerButtonStyle = { ...buttonStyle, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)' };
+const warningButtonStyle = { ...buttonStyle, color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)', background: 'rgba(251, 191, 36, 0.1)' };
+const secondaryButtonStyle = { ...buttonStyle, color: '#94a3b8', borderColor: 'rgba(148, 163, 184, 0.35)', background: 'rgba(148, 163, 184, 0.06)' };
 
 const numberInputStyle = {
   display: 'block',
   width: '100%',
   marginTop: '4px',
   padding: '8px 10px',
-  background: 'rgba(20, 30, 16, 0.6)',
+  background: 'rgba(2, 6, 23, 0.5)',
   borderWidth: '1px',
   borderStyle: 'solid',
-  borderColor: 'rgba(185, 194, 166, 0.3)',
+  borderColor: 'rgba(148, 163, 184, 0.3)',
   borderRadius: '6px',
-  color: '#e8ecd8',
+  color: '#f8fafc',
   fontSize: '13px',
   fontWeight: 'bold',
   outline: 'none',
@@ -368,24 +363,24 @@ function ConnectingOverlay({ connectionStatus }) {
     <div style={{
       position: 'absolute', inset: 0, zIndex: 20,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(20, 30, 16, 0.8)', backdropFilter: 'blur(4px)',
-      fontFamily: '"Georgia", "Times New Roman", serif',
+      background: 'rgba(2, 6, 23, 0.75)', backdropFilter: 'blur(4px)',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     }}>
       <div style={{
-        background: 'rgba(38, 56, 31, 0.95)', border: '1px solid rgba(122, 90, 52, 0.35)',
+        background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255, 255, 255, 0.1)',
         borderRadius: '16px', padding: '36px 44px', textAlign: 'center',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
       }}>
         <div style={{
           width: '36px', height: '36px', margin: '0 auto 18px',
-          border: `3px solid ${isRetrying ? 'rgba(226, 114, 107, 0.3)' : 'rgba(142, 202, 230, 0.3)'}`,
-          borderTopColor: isRetrying ? '#e2726b' : '#8ecae6',
+          border: `3px solid ${isRetrying ? 'rgba(239, 68, 68, 0.25)' : 'rgba(56, 189, 248, 0.25)'}`,
+          borderTopColor: isRetrying ? '#ef4444' : '#38bdf8',
           borderRadius: '50%', animation: 'ps-spin 0.8s linear infinite',
         }} />
-        <div style={{ color: '#e8ecd8', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
+        <div style={{ color: '#f8fafc', fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.5px' }}>
           {isRetrying ? 'Backend disconnected' : 'Connecting to PlaneSplit backend'}
         </div>
-        <div style={{ color: '#b9c2a6', fontSize: '12px', marginTop: '8px', maxWidth: '260px' }}>
+        <div style={{ color: '#94a3b8', fontSize: '12px', marginTop: '8px', maxWidth: '260px' }}>
           {isRetrying
             ? 'Retrying every 2s. No simulated state is shown until a real snapshot arrives.'
             : 'Waiting for the first real network snapshot over ws://localhost:8000/ws.'}
@@ -395,7 +390,7 @@ function ConnectingOverlay({ connectionStatus }) {
   )
 }
 
-const STATUS_COLOR = { synced: '#8fd19e', tolerated: '#e8c25a', alert: '#e2726b' }
+const STATUS_COLOR = { synced: '#22c55e', tolerated: '#fbbf24', alert: '#ef4444' }
 const STATUS_LABEL = { synced: 'NETWORK SYNCED', tolerated: 'PROPAGATING (TOLERATED)', alert: 'DIVERGENCE DETECTED' }
 
 // One tile per backend server, colored by that server's own FlowSnapshot.
@@ -441,7 +436,7 @@ function StatusLegend() {
       {items.map(([key, label]) => (
         <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: STATUS_COLOR[key] }} />
-          <span style={{ fontSize: '10px', color: '#8fa07e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+          <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
         </div>
       ))}
     </div>
@@ -455,26 +450,26 @@ function StatusLegend() {
 function ServerDetailCard({ flow }) {
   if (!flow) return null
   return (
-    <div style={{ padding: '12px', background: 'rgba(20, 15, 8, 0.38)', borderRadius: '16px', border: '1px solid rgba(122, 90, 52, 0.22)' }}>
-      <div style={{ fontSize: '12px', color: '#e8ecd8', marginBottom: '8px', fontWeight: 'bold' }}>
-        {flow.server_id} <span style={{ fontWeight: 'normal', color: '#8fa07e' }}>({flow.flow})</span>
+    <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div style={{ fontSize: '12px', color: '#f8fafc', marginBottom: '8px', fontWeight: 'bold' }}>
+        {flow.server_id} <span style={{ fontWeight: 'normal', color: '#64748b' }}>({flow.flow})</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#8fd19e', marginRight: '8px', boxShadow: '0 0 8px #8fd19e' }}></div>
-        <span style={{ fontSize: '12px', width: '30px', color: '#b9c2a6' }}>CP:</span>
+        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e', marginRight: '8px', boxShadow: '0 0 8px #22c55e' }}></div>
+        <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>CP:</span>
         <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{flow.cp_trace.join(' → ')}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center' }}>
         <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: STATUS_COLOR[flow.status], marginRight: '8px', boxShadow: `0 0 8px ${STATUS_COLOR[flow.status]}` }}></div>
-        <span style={{ fontSize: '12px', width: '30px', color: '#b9c2a6' }}>DP:</span>
+        <span style={{ fontSize: '12px', width: '30px', color: '#94a3b8' }}>DP:</span>
         <span style={{ fontSize: '12px', fontWeight: 'bold', color: flow.status === 'synced' ? 'white' : STATUS_COLOR[flow.status] }}>{flow.dp_trace.join(' → ')}</span>
       </div>
       {/* Real value from backend/state.py's validate_packet_size — every
           packet this simulation carries is a genuine, bounds-checked
           Ethernet frame size (64-1500 bytes), not a placeholder. */}
       {typeof flow.packet_size_bytes === 'number' && (
-        <div style={{ fontSize: '11px', color: '#8fa07e', marginTop: '6px', paddingLeft: '18px' }}>
-          Packet size: <span style={{ color: '#b9c2a6', fontWeight: 'bold' }}>{flow.packet_size_bytes} B</span>
+        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '6px', paddingLeft: '18px' }}>
+          Packet size: <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>{flow.packet_size_bytes} B</span>
         </div>
       )}
     </div>
@@ -500,14 +495,14 @@ function LiveConsole({ logs, filterTag }) {
   return (
     <div ref={scrollRef} style={{
       height: '100%', overflowY: 'auto', boxSizing: 'border-box',
-      fontFamily: "'Courier New', ui-monospace, Consolas, monospace", fontSize: '11px',
+      fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '11px',
       padding: '8px 16px', lineHeight: '1.7',
     }}>
-      {visible.length === 0 && <div style={{ color: '#5f6e52' }}>No events yet.</div>}
+      {visible.length === 0 && <div style={{ color: '#475569' }}>No events yet.</div>}
       {visible.map(l => (
-        <div key={l.id} style={{ whiteSpace: 'pre', color: '#d7dcc4' }}>
-          <span style={{ color: '#5f6e52' }}>{l.time}</span>{'  '}
-          <span style={{ color: l.tag === 'system' ? '#8ecae6' : '#b8a8d8', fontWeight: 'bold' }}>{l.tag.padEnd(10)}</span>
+        <div key={l.id} style={{ whiteSpace: 'pre', color: '#cbd5e1' }}>
+          <span style={{ color: '#475569' }}>{l.time}</span>{'  '}
+          <span style={{ color: l.tag === 'system' ? '#38bdf8' : '#a78bfa', fontWeight: 'bold' }}>{l.tag.padEnd(10)}</span>
           {l.message}
         </div>
       ))}
@@ -765,10 +760,8 @@ export default function App() {
 
   return (
     <div style={{
-      width: '100vw', height: '100vh',
-      background: 'linear-gradient(160deg, #20301f 0%, #1c2b17 55%, #152210 100%)',
-      overflow: 'hidden',
-      fontFamily: '"Georgia", "Times New Roman", serif', color: '#e8ecd8',
+      width: '100vw', height: '100vh', background: '#020617', overflow: 'hidden',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', color: '#f8fafc',
       display: 'grid',
       gridTemplateColumns: '300px 1fr 340px',
       gridTemplateRows: '72px 1fr 200px',
@@ -780,24 +773,16 @@ export default function App() {
           its own grid row, not an absolutely-positioned overlay. */}
       <div style={{
         gridArea: 'header', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px',
-        background: 'linear-gradient(180deg, rgba(42, 61, 34, 0.8), rgba(32, 48, 31, 0.7))',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(122, 90, 52, 0.35)',
+        padding: '0 20px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Small nod to the "on pendulums" lecture theme — purely
-              decorative swing, transform-origin pinned at the top so it
-              reads as a pivot rather than a generic wobble. */}
-          <div style={{
-            width: '3px', height: '30px', background: '#8ecae6', borderRadius: '2px',
-            transformOrigin: 'top center', animation: 'ps-pendulum 2.4s ease-in-out infinite',
-          }} />
+          <div style={{ width: '3px', height: '30px', background: '#38bdf8', borderRadius: '2px' }} />
           <div>
-            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#e8ecd8' }}>
+            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9' }}>
               PlaneSplit
             </h1>
-            <p style={{ margin: 0, fontSize: '11px', color: '#b9c2a6' }}>
+            <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
               Control-plane / data-plane consistency
             </p>
           </div>
@@ -808,15 +793,15 @@ export default function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{
               width: '8px', height: '8px', borderRadius: '50%',
-              background: isLive ? '#8fd19e' : connectionStatus === 'connecting' ? '#e8c25a' : '#e2726b',
-              boxShadow: `0 0 8px ${isLive ? '#8fd19e' : connectionStatus === 'connecting' ? '#e8c25a' : '#e2726b'}`,
+              background: isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444',
+              boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
             }} />
-            <span style={{ fontSize: '11px', letterSpacing: '1px', color: '#8fa07e', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase' }}>
               {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
             </span>
           </div>
           <div style={{
-            background: 'rgba(232, 236, 216, 0.92)', borderRadius: '10px', padding: '6px 12px',
+            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '10px', padding: '6px 12px',
             boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)',
           }}>
             <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '24px', display: 'block' }} />
@@ -829,7 +814,7 @@ export default function App() {
           for screen space. */}
       <div style={{
         gridArea: 'left', overflowY: 'auto', padding: '20px',
-        background: 'rgba(38, 56, 31, 0.55)', borderRight: '1px solid rgba(122, 90, 52, 0.28)',
+        background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         {/* Controls */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -859,10 +844,10 @@ export default function App() {
             (the real IPv4 host-octet ceiling, not an arbitrary UX limit),
             but these inputs share the exact same bounds so nothing typed
             here silently gets clamped without the field reflecting it. */}
-        <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(20, 15, 8, 0.32)', borderRadius: '16px', border: '1px solid rgba(122, 90, 52, 0.22)' }}>
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#8fa07e', letterSpacing: '1px' }}>Configure Infra</h3>
+        <div style={{ marginTop: '16px', padding: '15px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-            <label style={{ fontSize: '11px', color: '#b9c2a6' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Servers ({MIN_SERVERS}–{MAX_SERVERS})
               <input
                 type="number" min={MIN_SERVERS} max={MAX_SERVERS} value={serverInput}
@@ -871,7 +856,7 @@ export default function App() {
                 style={numberInputStyle}
               />
             </label>
-            <label style={{ fontSize: '11px', color: '#b9c2a6' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Users ({MIN_USERS}–{MAX_USERS})
               <input
                 type="number" min={MIN_USERS} max={MAX_USERS} value={userInput}
@@ -898,11 +883,11 @@ export default function App() {
         {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
 
         <Canvas camera={{ position: [0, 10, 16], fov: 50 }}>
-        <color attach="background" args={['#1c2b17']} />
+        <color attach="background" args={['#020617']} />
 
         {/* Environment setup */}
         <ambientLight intensity={0.2} />
-        <directionalLight position={[10, 20, 10]} intensity={1.5} color="#e0c98a" />
+        <directionalLight position={[10, 20, 10]} intensity={1.5} color="#818cf8" />
 
         {/* Space dust */}
         <Stars radius={100} depth={50} count={3000} factor={4} saturation={1} fade speed={1.5} />
@@ -913,10 +898,10 @@ export default function App() {
             args={[40, 40]}
             cellSize={1}
             cellThickness={1}
-            cellColor="#4a3a26"
+            cellColor="#1e293b"
             sectionSize={5}
             sectionThickness={1.5}
-            sectionColor="#8ecae6"
+            sectionColor="#38bdf8"
             fadeDistance={35}
         />
 
@@ -942,10 +927,10 @@ export default function App() {
         {/* Paths and Packets — one CP/DP pair per backend server/flow */}
         {flows.map(f => (
           <group key={f.server_id}>
-            <PathLine path={f.cp_trace} color="#8fd19e" offset={0.3} nodePositions={nodePositions} />
+            <PathLine path={f.cp_trace} color="#22c55e" offset={0.3} nodePositions={nodePositions} />
             <Packet path={f.cp_trace} isCP={true} nodePositions={nodePositions} />
 
-            <PathLine path={f.dp_trace} color={f.status === 'synced' ? "#8ecae6" : STATUS_COLOR[f.status]} offset={-0.3} nodePositions={nodePositions} />
+            <PathLine path={f.dp_trace} color={f.status === 'synced' ? "#3b82f6" : STATUS_COLOR[f.status]} offset={-0.3} nodePositions={nodePositions} />
             <Packet path={f.dp_trace} isCP={false} nodePositions={nodePositions} />
           </group>
         ))}
@@ -971,10 +956,10 @@ export default function App() {
           the left sidebar and the 3D viewport. */}
       <div style={{
         gridArea: 'right', overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px',
-        background: 'rgba(38, 56, 31, 0.55)', borderLeft: '1px solid rgba(122, 90, 52, 0.28)',
+        background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         <div>
-          <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', textTransform: 'uppercase', color: '#8fa07e', letterSpacing: '1px' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>
             {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
           </h3>
           <div style={{
@@ -1008,12 +993,12 @@ export default function App() {
             servers share a responsible_router, i.e. the shared-ingress
             fault case scale() + inject() are built to demonstrate. */}
         {rootCauses.length > 0 && (
-            <div style={{ padding: '12px', background: 'rgba(232, 194, 90, 0.12)', border: '1px solid rgba(232, 194, 90, 0.35)', borderRadius: '16px' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#e8c25a', fontWeight: 'bold', marginBottom: '6px' }}>
+            <div style={{ padding: '12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px' }}>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '6px' }}>
                     Root Cause Analysis
                 </div>
                 {rootCauses.map((rc, i) => (
-                    <div key={i} style={{ fontSize: '11px', color: '#d7dcc4', lineHeight: '1.5' }}>
+                    <div key={i} style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.5' }}>
                         <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) all diverge at the same router: <b>{rc.responsible_router}</b>. Reported as one shared root cause, not {rc.flows.length} separate alerts.
                     </div>
                 ))}
@@ -1027,9 +1012,9 @@ export default function App() {
           bottom panel rather than squeezing a wide log into a sidebar. */}
       <div style={{
         gridArea: 'console', display: 'flex', flexDirection: 'column',
-        background: '#14200f', borderTop: '1px solid rgba(122, 90, 52, 0.28)',
+        background: '#05070d', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
-        <div style={{ padding: '6px 16px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#8fa07e', borderBottom: '1px solid rgba(122, 90, 52, 0.24)' }}>
+        <div style={{ padding: '6px 16px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
           Live Console — tailing {selectedServerId ?? 'system'}
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
