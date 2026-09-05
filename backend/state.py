@@ -39,7 +39,8 @@ from planesplit.core.router import Router
 from planesplit.faults.update_channel import FaultMode, InjectedFault, UpdateChannel
 from planesplit.verify.correlator import correlate
 from planesplit.verify.prober import probe_flow
-from planesplit.verify.verifier import Verifier
+from planesplit.verify.remediator import Remediator
+from planesplit.verify.verifier import Alert, Verifier
 
 # Kept as module-level constants for backward compatibility: these describe
 # exactly the first/default server and its flow, unchanged from before
@@ -269,6 +270,10 @@ class SimulationState:
         self.cpm = ControlPlaneManager(self.net)
         self.channel = UpdateChannel(self.net)
         self.verifier = Verifier(grace_window_seconds=self.grace_window_seconds)
+        # snapshot() (called at the end of this method) rebuilds this fresh
+        # every time, so a rescale can never leave remediate() pointing at
+        # an Alert whose flow/router no longer exists in the new topology.
+        self._alerts_by_server: dict[str, Alert] = {}
 
         # Baseline: every flow starts Users -> Firewall, fully converged.
         now = self._clock()
@@ -335,6 +340,25 @@ class SimulationState:
 
         return self.snapshot()
 
+    def remediate(self, server_id: str) -> Snapshot:
+        """Fix server_id's current real Alert by replaying its RIB's own
+        never-faulted intent through one clean UpdateChannel write — a real
+        corrective action via the tested Remediator, not an optimistic UI
+        flip. Raises ValueError if server_id has no active alert right now
+        (already synced/tolerated, or an unknown id), so a stale click from
+        the UI surfaces as a real error rather than silently no-op'ing.
+        """
+        alert = self._alerts_by_server.get(server_id)
+        if alert is None:
+            raise ValueError(
+                f"no active alert for server_id {server_id!r} to remediate "
+                "(it may already be synced, or the id may be unknown)"
+            )
+        Remediator(self.net, self.cpm, self.channel, self.verifier).remediate(
+            alert, now=self._clock()
+        )
+        return self.snapshot()
+
     def tick(self) -> Snapshot:
         """Apply any due delayed updates and re-evaluate. Called by the
         backend's periodic broadcast loop so a TOLERATED mismatch can be
@@ -347,6 +371,10 @@ class SimulationState:
         now = self._clock()
         flow_snapshots: list[FlowSnapshot] = []
         alerts = []
+        # Rebuilt fresh every call — a server whose flow re-converges (or
+        # was rescaled away) must not leave a stale Alert remediate() could
+        # act on.
+        self._alerts_by_server = {}
 
         # Any attached user works as the probe source — routing is
         # destination-based, so the computed path is identical regardless
@@ -359,6 +387,7 @@ class SimulationState:
             if alert is not None:
                 status = "alert"
                 alerts.append(alert)
+                self._alerts_by_server[server_id] = alert
             elif intended != actual:
                 status = "tolerated"
             else:

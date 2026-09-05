@@ -288,3 +288,62 @@ def test_inject_with_unknown_target_server_id_faults_all():
     snap = sim.tick()
 
     assert all(f.status == "alert" for f in snap.flows)
+
+
+def test_remediate_fixes_an_alerted_flow_and_reconverges():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+
+    sim.inject("drop")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+    assert snap.status == "alert"
+
+    snap = sim.remediate("Server")
+    assert snap.status == "synced"
+    assert snap.cp_trace == snap.dp_trace
+
+
+def test_remediate_raises_value_error_when_server_has_no_active_alert():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    with pytest.raises(ValueError, match="no active alert"):
+        sim.remediate("Server")
+
+
+def test_remediate_raises_value_error_for_unknown_server_id():
+    sim = SimulationState(clock=FakeClock())
+    sim.reset()
+    with pytest.raises(ValueError, match="no active alert"):
+        sim.remediate("NoSuchServer")
+
+
+def test_remediate_does_not_disturb_other_scaled_servers():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(3, 1)
+
+    sim.inject("drop", target_server_id="Server_2")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+    assert snap.flows[1].status == "alert"
+
+    snap = sim.remediate("Server_2")
+    by_id = {f.server_id: f for f in snap.flows}
+    assert by_id["Server_2"].status == "synced"
+    assert by_id["Server"].status == "synced"
+    assert by_id["Server_3"].status == "synced"
+
+
+def test_rescaling_clears_stale_alerts_so_remediate_then_raises():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.reset()
+    sim.inject("drop")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    sim.tick()
+
+    sim.scale(2, 2)  # fresh topology, fully converged
+    with pytest.raises(ValueError, match="no active alert"):
+        sim.remediate("Server")
