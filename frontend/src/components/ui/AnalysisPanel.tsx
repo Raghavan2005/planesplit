@@ -240,35 +240,32 @@ function AgentReviewSection({ flow, correlatedGroup }: { flow: FlowSnapshot; cor
         background: `${accent}14`, border: `1px solid ${accent}40`,
       }}>
         <div
-          title={review.headline}
           style={{
-            fontSize: '10px', fontWeight: 'bold', color: accent, lineHeight: '1.3', marginBottom: '1px',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontSize: '10px', fontWeight: 'bold', color: accent, lineHeight: '1.3', marginBottom: '2px',
+            overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
           }}
         >
           {review.headline}
         </div>
-        {/* Bounded (not unbounded) so a flow with a long reason string plus
-            several correlated flows can't push this box tall enough to
-            starve the panel's own flexible request-history section below —
-            it scrolls internally instead, same defensive pattern as
-            ServerStatusGrid/AlertHistory. Kept deliberately short (~2 lines
-            visible): the full evidence array is still all there, just
-            reachable by scrolling this one small list rather than
-            reserving space for every line up front. */}
+        {/* Bounded, not unbounded (a flow with a long reason string plus
+            several correlated flows could in principle push this tall), but
+            generous enough (~7 lines) to show a normal alert's full evidence
+            (CP path, DP path, hop diagnosis, verifier reason, detected-at,
+            correlation) without scrolling -- verified against a live
+            triggered alert. Only scrolls in the pathological case, same
+            defensive pattern as ServerStatusGrid/AlertHistory. */}
         <ul style={{
-          margin: '0 0 1px 0', padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: '1px',
-          maxHeight: '16px', overflowY: 'auto',
+          margin: '0 0 2px 0', padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: '1px',
+          maxHeight: '84px', overflowY: 'auto',
         }}>
           {review.evidence.map((line, i) => (
             <li key={i} style={{ fontSize: '9.5px', color: colors.textSecondary, lineHeight: '1.25' }}>{line}</li>
           ))}
         </ul>
         <div
-          title={review.recommendation}
           style={{
-            fontSize: '10px', color: colors.textPrimary, fontWeight: 'bold',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            fontSize: '10px', color: colors.textPrimary, fontWeight: 'bold', lineHeight: '1.3',
+            overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
           }}
         >
           → {review.recommendation}
