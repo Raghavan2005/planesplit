@@ -53,9 +53,14 @@ async def websocket_endpoint(websocket: WebSocket):
             if action == "reset":
                 state.reset()
             elif action == "update_route":
-                state.inject(data.get("fault", "none"))
+                state.inject(data.get("fault", "none"), target_server_id=data.get("target_server_id"))
             elif action == "scale":
-                state.scale(data.get("num_servers", 1), data.get("num_users", 1))
+                state.scale(
+                    data.get("num_servers", 1), data.get("num_users", 1),
+                    grace_window_seconds=data.get("grace_window_seconds"),
+                    min_packet_size=data.get("min_packet_size"),
+                    max_packet_size=data.get("max_packet_size"),
+                )
             await broadcast_snapshot()
     except WebSocketDisconnect:
         clients.remove(websocket)

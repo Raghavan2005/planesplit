@@ -95,7 +95,7 @@ def validate_packet_size(size_bytes: int) -> int:
     return size_bytes
 
 
-def _packet_size_for(flow: IPv4Network, now: float) -> int:
+def _packet_size_for(flow: IPv4Network, now: float, min_bytes: int, max_bytes: int) -> int:
     """Deterministic given (flow, now) — same inputs always produce the same
     size, so tests using FakeClock stay reproducible — but varies across
     flows and across time so the live demo doesn't show a suspiciously
@@ -106,8 +106,8 @@ def _packet_size_for(flow: IPv4Network, now: float) -> int:
     should not depend on incidentally holding true only within one run.
     """
     digest = hashlib.sha256(f"{flow}:{now:.1f}".encode()).digest()
-    span = MAX_PACKET_SIZE_BYTES - MIN_PACKET_SIZE_BYTES
-    size = MIN_PACKET_SIZE_BYTES + (int.from_bytes(digest[:4], "big") % (span + 1))
+    span = max_bytes - min_bytes
+    size = min_bytes + (int.from_bytes(digest[:4], "big") % (span + 1))
     return validate_packet_size(size)
 
 
@@ -186,9 +186,15 @@ class SimulationState:
         self.reset()
 
     def reset(self) -> Snapshot:
-        return self.scale(num_servers=1, num_users=1)
+        return self.scale(num_servers=1, num_users=1,
+                           grace_window_seconds=UpdateChannel.GRACE_WINDOW_SECONDS,
+                           min_packet_size=MIN_PACKET_SIZE_BYTES,
+                           max_packet_size=MAX_PACKET_SIZE_BYTES)
 
-    def scale(self, num_servers: int, num_users: int) -> Snapshot:
+    def scale(self, num_servers: int, num_users: int,
+              grace_window_seconds: Optional[float] = None,
+              min_packet_size: Optional[int] = None,
+              max_packet_size: Optional[int] = None) -> Snapshot:
         """Rebuild the network with `num_servers` backend servers sharing
         the same Users/Firewall/AWS_ALB ingress tier, and `num_users`
         synthetic client hosts attached to it. Routing is destination-based
@@ -199,9 +205,42 @@ class SimulationState:
         individually-tracked routes to demonstrate "many real users hitting
         a shared load balancer/firewall tier", which is the real-infra
         picture being modeled here.
+
+        grace_window_seconds/min_packet_size/max_packet_size are optional
+        demo-tuning knobs for the live dashboard — None (the default, used
+        by every pre-existing caller) reproduces today's exact behavior.
         """
         num_servers = max(MIN_SERVERS, min(MAX_SERVERS, num_servers))
         num_users = max(MIN_USERS, min(MAX_USERS, num_users))
+
+        if grace_window_seconds is None:
+            grace_window_seconds = UpdateChannel.GRACE_WINDOW_SECONDS
+        else:
+            # [1.0, 10.0] is a UX/demo-usability bound, not a physical
+            # constraint: the backend's own broadcast tick runs every 0.3s
+            # (see start_tick_loop in main.py), so a window any shorter than
+            # ~1s would make the TOLERATED state flicker past too fast to be
+            # visible in the live UI between broadcasts.
+            grace_window_seconds = max(1.0, min(10.0, grace_window_seconds))
+
+        if min_packet_size is None:
+            min_packet_size = MIN_PACKET_SIZE_BYTES
+        else:
+            min_packet_size = max(MIN_PACKET_SIZE_BYTES, min(MAX_PACKET_SIZE_BYTES, min_packet_size))
+        if max_packet_size is None:
+            max_packet_size = MAX_PACKET_SIZE_BYTES
+        else:
+            max_packet_size = max(MIN_PACKET_SIZE_BYTES, min(MAX_PACKET_SIZE_BYTES, max_packet_size))
+        if min_packet_size > max_packet_size:
+            # A UX input, not the hard Ethernet-frame guarantee
+            # validate_packet_size enforces elsewhere in this file -- a
+            # reversed range from the dashboard is just swapped into a
+            # valid one rather than rejected.
+            min_packet_size, max_packet_size = max_packet_size, min_packet_size
+
+        self.grace_window_seconds = grace_window_seconds
+        self.min_packet_size = min_packet_size
+        self.max_packet_size = max_packet_size
 
         self.net = Network()
         for name in ("Users", "Firewall", "AWS_ALB"):
@@ -229,7 +268,7 @@ class SimulationState:
 
         self.cpm = ControlPlaneManager(self.net)
         self.channel = UpdateChannel(self.net)
-        self.verifier = Verifier()
+        self.verifier = Verifier(grace_window_seconds=self.grace_window_seconds)
 
         # Baseline: every flow starts Users -> Firewall, fully converged.
         now = self._clock()
@@ -240,7 +279,7 @@ class SimulationState:
 
         return self.snapshot()
 
-    def inject(self, fault_name: str) -> Snapshot:
+    def inject(self, fault_name: str, target_server_id: Optional[str] = None) -> Snapshot:
         """Push a fresh legitimate route change on every flow's Users->?
         leg simultaneously, toggling each between Firewall and AWS_ALB, then
         apply the SAME requested fault to every flow's FIB write. Applying
@@ -249,11 +288,29 @@ class SimulationState:
         shape verify.correlator.correlate() exists for — a real shared
         ingress/LB problem affecting every backend behind it — instead of
         a scenario that never actually needs correlation.
+
+        target_server_id optionally restricts the fault to a single
+        server's flow (for the multi-flow root-cause demo where only one
+        backend actually breaks). None (the default) keeps today's
+        all-flows behavior. If target_server_id doesn't match any current
+        server (e.g. a stale selection from before scale() shrank the
+        roster), fall back to faulting all flows rather than silently
+        doing nothing.
         """
         now = self._clock()
         fault = _FAULT_MAP.get(fault_name, _FAULT_MAP["none"])()
 
-        for flow in self.flows:
+        if target_server_id is None:
+            flows_to_fault = self.flows
+        else:
+            flows_to_fault = [
+                flow for sid, flow in zip(self.server_ids, self.flows)
+                if sid == target_server_id
+            ]
+        if not flows_to_fault:
+            flows_to_fault = self.flows
+
+        for flow in flows_to_fault:
             current_next_hop = self.net.routers["Users"].rib.get(flow)
 
             # Re-converge first: clear any leftover FIB entries a previous
@@ -314,7 +371,7 @@ class SimulationState:
                 status=status,
                 fault_node=alert.responsible_router if alert else None,
                 reason=alert.reason if alert else None,
-                packet_size_bytes=_packet_size_for(flow, now),
+                packet_size_bytes=_packet_size_for(flow, now, self.min_packet_size, self.max_packet_size),
             ))
 
         root_causes = [

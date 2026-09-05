@@ -226,3 +226,65 @@ def test_packet_size_is_deterministic_for_the_same_clock_but_varies_over_time():
     # but with a 1437-value range a same-flow collision across a real time
     # jump would be a red flag that the generator isn't actually varying.
     assert snap_a.flows[0].packet_size_bytes != snap_c.flows[0].packet_size_bytes
+
+
+def test_scale_grace_window_is_configurable():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(1, 1, grace_window_seconds=5.0)
+
+    sim.inject("drop")
+    clock.advance(3.0)
+    snap = sim.tick()
+    assert snap.status == "tolerated"
+
+    clock.advance(2.1)  # total 5.1s since the legitimate change
+    snap = sim.tick()
+    assert snap.status == "alert"
+
+
+def test_scale_packet_size_range_is_configurable():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(1, 1, min_packet_size=200, max_packet_size=300)
+
+    for t in (0.0, 1.0, 2.0, 3.0, 4.0):
+        clock.t = t
+        snap = sim.snapshot()
+        size = snap.flows[0].packet_size_bytes
+        assert 200 <= size <= 300
+
+
+def test_scale_packet_size_range_swapped_if_inverted():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    snap = sim.scale(1, 1, min_packet_size=300, max_packet_size=200)
+    size = snap.flows[0].packet_size_bytes
+    assert 200 <= size <= 300
+
+
+def test_inject_with_target_server_id_only_faults_that_server():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(3, 1)
+
+    sim.inject("drop", target_server_id="Server_2")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+
+    by_id = {f.server_id: f for f in snap.flows}
+    assert by_id["Server_2"].status == "alert"
+    assert by_id["Server"].status == "synced"
+    assert by_id["Server_3"].status == "synced"
+
+
+def test_inject_with_unknown_target_server_id_faults_all():
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(2, 1)
+
+    sim.inject("drop", target_server_id="NoSuchServer")
+    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
+    snap = sim.tick()
+
+    assert all(f.status == "alert" for f in snap.flows)
