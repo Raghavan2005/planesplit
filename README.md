@@ -20,6 +20,26 @@ they shouldn't. A short propagation delay after a legitimate change is
 normal and must be tolerated; a mismatch that never resolves is a real fault
 that must be caught.
 
+### Why this keeps mattering as hardware gets faster
+
+Light in fiber already travels at roughly two-thirds the speed of light in
+vacuum — thousands of times faster than a human can react, and fast enough
+that the transmission medium itself is not where network latency comes
+from. The bottleneck has always been on the *processing* side: how a
+routing decision gets made, propagated to every device that needs it, and
+correctly applied — not how fast a signal can physically travel down a
+wire. Raw compute keeps getting faster too (multicore, better silicon, and
+eventually practical quantum acceleration for specific workloads), which
+will keep shrinking the compute-bound part of that pipeline further. None
+of that helps if the control plane and data plane can silently disagree
+about what a device is supposed to be doing — a faster network just
+propagates a stale or corrupted rule to more traffic, faster, before anyone
+notices. As the medium and the raw processing power stop being the
+limiting factors, correct, efficiently-verified routing — catching exactly
+the kind of control-plane/data-plane divergence this project detects —
+becomes the part of the pipeline that actually decides whether "faster
+hardware" translates into "faster, correct delivery."
+
 ## What this is
 
 A pure-software, deterministic simulation — no physical switches, no
@@ -222,6 +242,62 @@ correctly produces a fresh `Alert` instead of being hidden — see
 `verify/remediator.py` · `tests/test_remediator.py` (6 tests) · full
 design rationale in `docs/INNOVATION.md` "Innovation 2".
 
+## Web dashboard (backend/ + frontend/)
+
+A live, browser-based visualization of the same real engine above — not a
+separate reimplementation. `backend/state.py` wraps the exact, tested
+`planesplit.core`/`planesplit.faults`/`planesplit.verify` classes (real
+`RIB`/`FIB`, real `UpdateChannel`, real per-flow `Verifier`), and every
+value the UI renders traces back to a real `FlowSnapshot`, `Alert`, or
+`RequestEvent` — nothing client-side is synthesized to look like activity.
+
+```bash
+# Backend — FastAPI + WebSocket, from the repo root
+pip install -r backend/requirements.txt
+cd backend && uvicorn main:app --port 8000
+
+# Frontend — Vite + React, in a second terminal
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+What it shows:
+
+- **3D scene** (`react-three-fiber`) and a **2D topology map** (plain SVG),
+  toggled from the header — both read the exact same live
+  `flows`/`requestEvents` state over one WebSocket, so switching views never
+  re-fetches or shows different data. Every node in the 2D map can be
+  **dragged** to declutter a busy diagram (a session-only view convenience —
+  a "RESET LAYOUT" button restores the real computed positions; nothing
+  about the underlying topology/status changes).
+- **Fault injection controls** (delay/drop/corrupt, scoped to all servers or
+  just the selected one), **scenario presets**, and free-form infra config
+  (server/user count, grace window, packet-size range) — all sent as real
+  WebSocket actions, validated server-side against a Pydantic schema
+  (`backend/schemas.py`) before touching simulation state.
+- **REMEDIATE** / **SEND TEST REQUEST**, wired to the real
+  `Remediator.remediate()` and a real probe-and-check request, both in the
+  header next to whichever server is currently selected.
+- **Live Console** — styled like a VS Code integrated terminal, tailing the
+  real raw WebSocket traffic: every outgoing action payload
+  (`→ {"action":"update_route",...}`) and every real `request_event` the
+  backend pushes back (`delivered`/`diverged`/`dropped {...}`, color-coded
+  by outcome), not paraphrased summaries. A "Full History" modal shows the
+  complete, untruncated session log and request history.
+- **Alert notifications** via [Sonner](https://sonner.emilkowal.ski/) —
+  fired only when a server's real status transitions into `alert` (the same
+  diff that also feeds the persistent, session-long Alert History panel),
+  never simulated or timer-driven.
+- **Agent Review** and **Root Cause Analysis** panels surfacing the real
+  per-flow evidence trail (hop-by-hop CP/DP trace, `fault_node`, verifier
+  `reason`, correlation membership) a judge would need to see *why* a fault
+  was flagged, not just that it was.
+
+The WebSocket endpoint validates the request `Origin` against an explicit
+allowlist and gives each connection its own isolated `SimulationState` (no
+shared global state between browser tabs/viewers) — see `backend/main.py`.
+
 ## Reset
 
 There is nothing to reset. The demo and every test build a fresh, in-memory
@@ -247,6 +323,7 @@ two full `--all` runs).
 
 ## Known gaps
 
-- A served web visualization was scoped as a stretch goal only and has not
-  been built to the same standard as `planesplit/` — see `docs/STATUS.md`
-  "Known gaps" for the specifics of the `backend/`/`frontend/` prototype.
+- The web dashboard (`backend/`/`frontend/`, above) was originally scoped
+  as a stretch goal; it's since had a full hardening + feature pass and is
+  no longer a rough prototype — see `docs/STATUS.md` for the detailed,
+  dated history of that work and anything still open.
