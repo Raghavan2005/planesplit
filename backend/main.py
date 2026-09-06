@@ -6,9 +6,6 @@ if sys.platform == 'win32':
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-# Make the repo root importable regardless of the current working directory,
-# so `from planesplit...` resolves whether this is run as `python main.py`
-# from backend/ or as `python -m backend.main` from the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -17,33 +14,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from dispatch import handle_action
 from state import SimulationState
 
-state = SimulationState()
-clients: list[WebSocket] = []
+# [SEC-001] Session Isolation: Replace global state with a per-connection dictionary.
+sessions: dict[WebSocket, SimulationState] = {}
 
 
-async def broadcast_snapshot() -> None:
+async def broadcast_snapshot(websocket: WebSocket) -> None:
+    """Send the isolated state snapshot only to its owning client."""
+    if websocket not in sessions:
+        return
+    state = sessions[websocket]
     message = state.snapshot().to_dict()
-    await _broadcast(message)
-
-
-async def _broadcast(message: dict) -> None:
-    # Collect and drop dead sockets within this same call, rather than
-    # relying on the next WebSocketDisconnect from that socket's own receive
-    # loop to notice -- a socket that fails to send here would otherwise
-    # linger in `clients` until it happens to be its own turn to disconnect.
-    # Fanned out concurrently via asyncio.gather (return_exceptions=True) so
-    # one slow/dead client can't head-of-line-block every other client's
-    # send -- same collect-then-remove end result as a sequential loop, just
-    # concurrent.
-    targets = list(clients)
-    results = await asyncio.gather(
-        *(client.send_json(message) for client in targets),
-        return_exceptions=True,
-    )
-    dead = [client for client, result in zip(targets, results) if isinstance(result, Exception)]
-    for client in dead:
-        if client in clients:
-            clients.remove(client)
+    try:
+        await websocket.send_json(message)
+    except Exception:
+        sessions.pop(websocket, None)
 
 
 @asynccontextmanager
@@ -51,9 +35,14 @@ async def lifespan(app: FastAPI):
     async def loop():
         while True:
             await asyncio.sleep(0.3)
-            if clients:
-                state.tick()
-                await broadcast_snapshot()
+            if sessions:
+                # Tick all isolated states
+                for state in sessions.values():
+                    state.tick()
+                
+                # Broadcast concurrently to prevent slow clients from blocking the loop
+                tasks = [broadcast_snapshot(ws) for ws in list(sessions.keys())]
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     task = asyncio.create_task(loop())
     try:
@@ -63,13 +52,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# [SEC-003] Strict CORS Configuration
+ALLOWED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    # allow_credentials=True combined with allow_origins=["*"] is rejected by
-    # browsers in strict mode and is a real misconfiguration — this app uses
-    # no cookies/auth, so allow_credentials=False is the correct fix, not a
-    # workaround.
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,49 +67,55 @@ app.add_middleware(
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # [SEC-002] Cross-Site WebSocket Hijacking (CSWSH) Origin Validation
+    origin = websocket.headers.get("origin")
+    if origin and origin not in ALLOWED_ORIGINS:
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
-    clients.append(websocket)
-    await websocket.send_json(state.snapshot().to_dict())
+    
+    # Initialize a clean, isolated state for this specific user
+    state = SimulationState()
+    sessions[websocket] = state
+    
+    try:
+        await websocket.send_json(state.snapshot().to_dict())
+    except Exception:
+        sessions.pop(websocket, None)
+        return
+
     try:
         while True:
             try:
                 raw = await websocket.receive_json()
             except (ValueError, TypeError):
-                # Malformed JSON text -- reject this one message, keep the
-                # connection alive, same as a validation failure below.
                 await websocket.send_json({"type": "error", "message": "malformed JSON payload"})
                 continue
 
             try:
                 result = handle_action(state, raw)
             except AssertionError as exc:
-                # handle_action's own safety net for an unmatched action type
-                # (see its docstring) -- not reachable with today's 5 matched
-                # actions, but if it ever fires it must report a structured
-                # error and keep the loop (and clients cleanup) going, the
-                # same as any other rejected message, rather than escaping
-                # uncaught and silently killing this connection's task.
                 await websocket.send_json({"type": "error", "message": str(exc)})
                 continue
 
             if result is None:
-                await broadcast_snapshot()
+                await broadcast_snapshot(websocket)
             elif result.get("type") == "error":
                 await websocket.send_json(result)
             else:
-                # A distinct success payload (currently only send_request's
-                # request_event) -- every connected viewer should see the
-                # request travel, matching the shared-world-state model the
-                # rest of this app already uses, then a normal snapshot
-                # broadcast keeps status/recent_requests consistent.
-                await _broadcast(result)
-                await broadcast_snapshot()
+                # Success payload (RequestEvent). Since state is isolated, 
+                # we only send this to the specific user who requested it.
+                await websocket.send_json(result)
+                await broadcast_snapshot(websocket)
+                
     except WebSocketDisconnect:
-        if websocket in clients:
-            clients.remove(websocket)
+        sessions.pop(websocket, None)
+    except Exception:
+        # Catch unexpected errors to prevent loop crashes, evicting the broken session
+        sessions.pop(websocket, None)
 
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
