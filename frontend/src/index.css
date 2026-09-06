@@ -2,6 +2,11 @@
   to { transform: rotate(360deg); }
 }
 
+@keyframes ps-fade-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;

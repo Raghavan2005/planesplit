@@ -235,9 +235,19 @@ function AgentReviewSection({ flow, correlatedGroup }: { flow: FlowSnapshot; cor
   return (
     <div style={{ flexShrink: 0 }}>
       <SectionTitle small>Agent Review</SectionTitle>
-      <div style={{
+      {/* Keyed on the headline, not flow.server_id alone -- the headline
+          only actually changes when the review's real content changes
+          (new server selected, or a genuine status/fault_node/reason
+          change), whereas this whole panel re-renders every second just to
+          refresh "detected Xs ago" elsewhere. Keying on something that
+          changes every second would replay the animation every second too,
+          which would misrepresent a static, already-computed review as
+          something freshly recomputed -- keying on the headline means the
+          fade-in only ever plays for a genuinely new review. */}
+      <div key={review.headline} style={{
         marginTop: '2px', padding: '5px 8px', borderRadius: '6px',
         background: `${accent}14`, border: `1px solid ${accent}40`,
+        animation: 'ps-fade-in 0.25s ease-out',
       }}>
         <div
           style={{
