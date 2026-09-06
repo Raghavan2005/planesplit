@@ -1,4 +1,6 @@
-import { font } from '../../theme'
+import { font, requestStatusColor } from '../../theme'
+
+const REQUEST_STATUSES = new Set(['delivered', 'diverged', 'dropped'])
 
 export interface LogEntry {
   id: number
@@ -37,17 +39,27 @@ export function LiveConsole({ logs, filterTag }: LiveConsoleProps) {
   return (
     <div style={{
       height: '100%', overflow: 'hidden', boxSizing: 'border-box',
+      background: '#1e1e1e',
       fontFamily: font.mono, fontSize: '12px',
-      padding: '8px 18px', lineHeight: '1.55',
+      padding: '6px 18px', lineHeight: '1.55',
     }}>
-      {visible.length === 0 && <div style={{ color: '#475569' }}>No events yet.</div>}
-      {visible.map(l => (
-        <div key={l.id} style={{ whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis', color: '#cbd5e1' }}>
-          <span style={{ color: '#475569' }}>{l.time}</span>{'  '}
-          <span style={{ color: l.tag === 'system' ? '#38bdf8' : '#a78bfa', fontWeight: 'bold' }}>{l.tag.padEnd(10)}</span>
-          {l.message}
-        </div>
-      ))}
+      {visible.length === 0 && <div style={{ color: '#5a5a5a' }}>No events yet.</div>}
+      {visible.map(l => {
+        const firstWord = l.message.slice(0, l.message.indexOf(' ')) || l.message
+        const statusColor = REQUEST_STATUSES.has(firstWord) ? requestStatusColor[firstWord as keyof typeof requestStatusColor] : undefined
+        return (
+          <div key={l.id} style={{ whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis', color: '#d4d4d4' }}>
+            <span style={{ color: '#6a6a6a' }}>{l.time}</span>{'  '}
+            <span style={{ color: l.tag === 'system' ? '#4fc1ff' : '#c586c0', fontWeight: 'bold' }}>{l.tag.padEnd(10)}</span>
+            {statusColor ? (
+              <>
+                <span style={{ color: statusColor, fontWeight: 'bold' }}>{firstWord}</span>
+                {l.message.slice(firstWord.length)}
+              </>
+            ) : l.message}
+          </div>
+        )
+      })}
     </div>
   )
 }

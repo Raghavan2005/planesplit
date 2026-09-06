@@ -28,10 +28,11 @@ import { TopologyMap } from './components/map/TopologyMap'
 import { ConnectingOverlay } from './components/ui/ConnectingOverlay'
 import { ServerStatusGrid } from './components/ui/ServerStatusGrid'
 import { StatusLegend } from './components/ui/StatusLegend'
-import { ServerDetailCard } from './components/ui/ServerDetailCard'
+import { RemediateButton } from './components/ui/RemediateButton'
+import { SendRequestButton } from './components/ui/SendRequestButton'
 import { AnalysisPanel } from './components/ui/AnalysisPanel'
 import { LiveConsole } from './components/ui/LiveConsole'
-import { AlertToasts } from './components/ui/AlertToasts'
+import { Toaster, toast } from 'sonner'
 import { AlertHistory } from './components/ui/AlertHistory'
 import { FullHistoryModal } from './components/ui/FullHistoryModal'
 import {
@@ -158,21 +159,13 @@ export default function App() {
   const prevFlowsRef = useRef([])
   const prevHasRootCauseRef = useRef(false)
 
-  // Ephemeral alert toasts — pushed when a server's real status transitions
-  // into 'alert' (see the WS onmessage diff below), auto-dismissed after
-  // 7s or manually via the × button. Same ref-based-id pattern as logEvent
-  // above, for the same reason: ids must be captured at call time, not
-  // lazily inside the state updater, or batched updates collide.
-  const [toasts, setToasts] = useState([])
-  const toastIdRef = useRef(0)
-
-  // Persistent alert history — unlike the ephemeral 7s toast above, these
-  // rows stay until the cap (30, newest first) evicts them, so a judge can
-  // scroll back through everything that happened this session instead of
-  // only whatever fired in the last 7 seconds. Pushed from the exact same
-  // real status-transition check as the toast below (never a second,
-  // independent detection mechanism) — same synchronous-id-capture pattern
-  // as toastIdRef/logIdRef, for the same reason: ids must be read at call
+  // Persistent alert history — unlike the ephemeral 7s Sonner toast fired
+  // alongside it, these rows stay until the cap (30, newest first) evicts
+  // them, so a judge can scroll back through everything that happened this
+  // session instead of only whatever fired in the last 7 seconds. Pushed
+  // from the exact same real status-transition check as the toast (never a
+  // second, independent detection mechanism) — same synchronous-id-capture
+  // pattern as logIdRef, for the same reason: ids must be read at call
   // time, not lazily inside the state updater, or batched transitions in
   // the same tick would collide on the same id.
   const [alertHistory, setAlertHistory] = useState([])
@@ -213,10 +206,10 @@ export default function App() {
         }
         if (prev && prev.status !== 'alert' && f.status === 'alert') {
           const nowTime = new Date().toLocaleTimeString([], { hour12: false })
-          toastIdRef.current += 1
-          const toastId = toastIdRef.current
-          setToasts(ts => [...ts, { id: toastId, server_id: f.server_id, reason: f.reason || 'divergence detected', time: nowTime }])
-          setTimeout(() => setToasts(ts => ts.filter(t => t.id !== toastId)), 7000)
+          toast.error(`Alert — ${f.server_id}`, {
+            description: f.reason || 'divergence detected',
+            duration: 7000,
+          })
 
           alertHistoryIdRef.current += 1
           const historyId = alertHistoryIdRef.current
@@ -240,6 +233,22 @@ export default function App() {
     prevHasRootCauseRef.current = hasRootCause
   }, [rootCauses])
 
+  // Raw wire data for the console — every request_event this client hasn't
+  // already logged, exactly as the backend sent it over the socket (real
+  // cp_trace/dp_trace/status/reason, not a paraphrase). `requestEvents` is
+  // already deduped/merged by id in useSimulationSocket, so a ref of seen
+  // ids is enough to log each real event exactly once, the first time it's
+  // seen, regardless of whether it arrived via the live push or a
+  // reconnect's recent_requests backfill.
+  const seenRequestEventIdsRef = useRef(new Set())
+  useEffect(() => {
+    for (const ev of requestEvents) {
+      if (seenRequestEventIdsRef.current.has(ev.id)) continue
+      seenRequestEventIdsRef.current.add(ev.id)
+      logEvent(ev.server_id, `${ev.status} ${JSON.stringify(ev)}`)
+    }
+  }, [requestEvents])
+
   // Surfaces backend-rejected actions (invalid remediate/send_request
   // targets, malformed payloads) — without this, a rejected action would
   // fail completely silently, which is exactly the "black box" failure
@@ -258,8 +267,9 @@ export default function App() {
     if (!isLive) return
     setRequestedFault(fault)
     const target = faultScope === 'selected' ? selectedServerId : null
-    logEvent('system', fault === 'none' ? 'route update requested (sync)' : `fault injected: ${fault}${target ? ` (target: ${target})` : ' (all servers)'}`)
-    send({ action: 'update_route', fault, target_server_id: target })
+    const payload = { action: 'update_route', fault, target_server_id: target }
+    logEvent('system', `→ ${JSON.stringify(payload)}`)
+    send(payload)
   }
 
   const triggerReset = () => {
@@ -267,8 +277,9 @@ export default function App() {
     setRequestedFault('none')
     setServerInput(1)
     setUserInput(1)
-    logEvent('system', 'network reset')
-    send({ action: 'reset' })
+    const payload = { action: 'reset' }
+    logEvent('system', `→ ${JSON.stringify(payload)}`)
+    send(payload)
   }
 
   // Calls the real backend remediate action (state.py::SimulationState.
@@ -276,8 +287,9 @@ export default function App() {
   // here — the button/status only change once a real snapshot confirms it.
   const triggerRemediate = (serverId) => {
     if (!isLive) return
-    logEvent(serverId, 'remediation requested')
-    send({ action: 'remediate', server_id: serverId })
+    const payload = { action: 'remediate', server_id: serverId }
+    logEvent(serverId, `→ ${JSON.stringify(payload)}`)
+    send(payload)
   }
 
   // Calls the real backend send_request action — fires an actual probe,
@@ -285,8 +297,9 @@ export default function App() {
   // result included, not a client-side guess.
   const triggerSendRequest = (serverId) => {
     if (!isLive) return
-    logEvent(serverId, 'request sent')
-    send({ action: 'send_request', server_id: serverId })
+    const payload = { action: 'send_request', server_id: serverId }
+    logEvent(serverId, `→ ${JSON.stringify(payload)}`)
+    send(payload)
   }
 
   // Applies exactly what's in the config fields — clamped client-side to
@@ -303,11 +316,12 @@ export default function App() {
     setUserInput(users)
     setGraceWindowInput(graceWindow); setMinPacketInput(minPacket); setMaxPacketInput(maxPacket)
     setRequestedFault('none')
-    logEvent('system', `scaled to ${servers} servers, ${users} users, grace window ${graceWindow}s, packet size ${minPacket}-${maxPacket}B`)
-    send({
+    const payload = {
       action: 'scale', num_servers: servers, num_users: users,
       grace_window_seconds: graceWindow, min_packet_size: minPacket, max_packet_size: maxPacket,
-    })
+    }
+    logEvent('system', `→ ${JSON.stringify(payload)}`)
+    send(payload)
   }
 
   // One click: a random topology size (servers + users, within the same
@@ -324,9 +338,11 @@ export default function App() {
     setServerInput(servers)
     setUserInput(users)
     setRequestedFault(fault)
-    logEvent('system', `randomized — ${servers} servers, ${users} users, fault=${fault}`)
-    send({ action: 'scale', num_servers: servers, num_users: users })
-    send({ action: 'update_route', fault, target_server_id: null })
+    const scalePayload = { action: 'scale', num_servers: servers, num_users: users }
+    const faultPayload = { action: 'update_route', fault, target_server_id: null }
+    logEvent('system', `randomized — ${servers} servers, ${users} users, fault=${fault} → ${JSON.stringify(scalePayload)} → ${JSON.stringify(faultPayload)}`)
+    send(scalePayload)
+    send(faultPayload)
   }
 
   // Applies a fixed, named topology + fault combination in one click — for
@@ -341,9 +357,11 @@ export default function App() {
     setUserInput(preset.num_users)
     setRequestedFault(preset.fault)
     setFaultScope('all')
-    logEvent('system', `preset applied: ${preset.label}`)
-    send({ action: 'scale', num_servers: preset.num_servers, num_users: preset.num_users })
-    send({ action: 'update_route', fault: preset.fault, target_server_id: null })
+    const scalePayload = { action: 'scale', num_servers: preset.num_servers, num_users: preset.num_users }
+    const faultPayload = { action: 'update_route', fault: preset.fault, target_server_id: null }
+    logEvent('system', `preset applied: ${preset.label} → ${JSON.stringify(scalePayload)} → ${JSON.stringify(faultPayload)}`)
+    send(scalePayload)
+    send(faultPayload)
   }
 
   // Real, per-node fault targeting: once the backend raises a formal Alert,
@@ -388,7 +406,7 @@ export default function App() {
       fontFamily: font.sans, color: colors.textPrimary,
       display: 'grid',
       gridTemplateColumns: '320px 1fr 360px',
-      gridTemplateRows: '76px 1fr 208px',
+      gridTemplateRows: 'auto 1fr 142px',
       gridTemplateAreas: `"header header header" "left main right" "console console console"`,
     }}>
 
@@ -396,32 +414,83 @@ export default function App() {
           logo on the right. Nothing here overlaps the 3D viewport: it's
           its own grid row, not an absolutely-positioned overlay. */}
       <div style={{
-        gridArea: 'header', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
+        gridArea: 'header', display: 'flex', alignItems: 'center',
+        flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden',
+        padding: '8px 16px', gap: '18px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div style={{ width: '3px', height: '32px', background: '#38bdf8', borderRadius: '2px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9' }}>
+            <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9', whiteSpace: 'nowrap' }}>
               PlaneSplit
             </h1>
-            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+            <p style={{ margin: 0, fontSize: '10.5px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
               Control-plane / data-plane consistency
             </p>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+
+        {/* Server roster — moved here from the right sidebar: overall
+            status, the synced/tolerated/alert legend, the per-server tile
+            grid, and the selected server's identity + actions, all as one
+            compact row inline right after the app name. Same live
+            flows/selectedFlow state the right sidebar already reads, just
+            rendered inline instead of stacked. Header itself scrolls
+            horizontally (overflowX: auto above) rather than wrapping to a
+            second line, so this always stays a single row. */}
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: '12px', flexShrink: 0 }}>
+          <div style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '4px 8px', borderRadius: '6px',
+            background: `${overallColor}1a`, border: `1px solid ${overallColor}4d`,
+          }}>
+            <span style={{ fontSize: '9.5px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+              {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
+            </span>
+            <span style={{
+                color: overallColor, fontWeight: 'bold', letterSpacing: '0.5px',
+                textTransform: 'uppercase', fontSize: '10px', whiteSpace: 'nowrap',
+            }}>
+                {overallStatus === 'alert' ? `${alertCount}/${flows.length} ALERTING` : STATUS_LABEL[overallStatus]}
+            </span>
+          </div>
+
+          <div style={{ flexShrink: 0 }}>
+            <StatusLegend />
+          </div>
+
+          <div style={{ width: `${Math.max(flows.length, 1) * 15}px`, maxWidth: '100px', flexShrink: 0 }}>
+            <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
+          </div>
+
+          {selectedFlow && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[selectedFlow.status], boxShadow: `0 0 8px ${STATUS_COLOR[selectedFlow.status]}`, flexShrink: 0 }} />
+                <span
+                  title={`${selectedFlow.server_id} (${selectedFlow.flow})`}
+                  style={{ fontSize: '11px', color: '#f1f5f9', fontWeight: 600, whiteSpace: 'nowrap' }}
+                >
+                  {selectedFlow.server_id} <span style={{ fontWeight: 400, color: '#64748b' }}>({selectedFlow.flow})</span>
+                </span>
+              </div>
+              <RemediateButton serverId={selectedFlow.server_id} status={selectedFlow.status} isLive={isLive} onRemediate={triggerRemediate} />
+              <SendRequestButton serverId={selectedFlow.server_id} isLive={isLive} onSendRequest={triggerSendRequest} />
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0, marginLeft: 'auto' }}>
           {/* 3D/2D view toggle — swaps only the center 'main' grid cell
               below; both views read the exact same flows/requestEvents
               state from the same useSimulationSocket() call above, so
               switching never re-fetches or duplicates data. */}
-          <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '3px' }}>
+          <div style={{ display: 'flex', gap: '4px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '3px', flexShrink: 0 }}>
             <button
               onClick={() => setViewMode('3d')}
               style={{
                 ...(viewMode === '3d' ? buttonStyle : secondaryButtonStyle),
-                padding: '7px 16px', fontSize: '11px',
+                padding: '5px 10px', fontSize: '10px',
               }}
             >
               3D
@@ -430,7 +499,7 @@ export default function App() {
               onClick={() => setViewMode('2d')}
               style={{
                 ...(viewMode === '2d' ? buttonStyle : secondaryButtonStyle),
-                padding: '7px 16px', fontSize: '11px',
+                padding: '5px 10px', fontSize: '10px',
               }}
             >
               2D MAP
@@ -439,24 +508,24 @@ export default function App() {
 
           {/* Connection indicator — always visible, never implied by the
               presence of the panel itself */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
             <div style={{
-              width: '8px', height: '8px', borderRadius: '50%',
+              width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
               background: isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444',
               boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
             }} />
             <span style={{
-              fontSize: '12px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px',
+              fontSize: '10px', letterSpacing: '0.5px', color: '#64748b', textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
             }}>
-              {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
+              {isLive ? 'Live' : connectionStatus === 'connecting' ? 'Connecting…' : 'Disconnected'}
             </span>
           </div>
           <div style={{
-            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '8px', padding: '6px 12px',
-            boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)', display: 'flex', alignItems: 'center',
+            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '7px', padding: '4px 9px',
+            boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)', display: 'flex', alignItems: 'center', flexShrink: 0,
           }}>
-            <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '38px', display: 'block' }} />
+            <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '28px', display: 'block' }} />
           </div>
         </div>
       </div>
@@ -465,16 +534,16 @@ export default function App() {
           width, own scroll region, no longer competing with the 3D scene
           for screen space. */}
       <div style={{
-        gridArea: 'left', padding: '14px', minHeight: 0,
-        display: 'flex', flexDirection: 'column', gap: '10px',
-        overflowY: 'auto', overflowX: 'hidden',
+        gridArea: 'left', padding: '16px', minHeight: 0,
+        display: 'grid', gridTemplateRows: 'auto auto auto 1fr', gap: '16px', alignContent: 'start',
+        overflow: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         {/* Fault target scope — 'all' (historical default) injects into
             every server's flow, 'selected' targets only whichever server
             tile is currently selected in the right sidebar's status grid.
             Purely a targeting choice, doesn't disable anything below. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
           <button onClick={() => setFaultScope('all')} style={faultScope === 'all' ? buttonStyle : secondaryButtonStyle}>
             ALL SERVERS
           </button>
@@ -484,7 +553,7 @@ export default function App() {
         </div>
 
         {/* Controls */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', flexShrink: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
           <button disabled={!isLive} onClick={() => triggerUpdate('none')} style={isLive ? buttonStyle : disabledButtonStyle}>
             UPDATE ROUTE (SYNC)
           </button>
@@ -511,15 +580,15 @@ export default function App() {
             click. Deliberately visually distinct (neutral secondary style)
             from the danger/warning fault buttons above, since these apply
             a full scenario rather than a single fault. */}
-        <div style={{ flexShrink: 0, padding: '10px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
+        <div style={{ padding: '14px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 10px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
             {PRESETS.map(preset => (
               <button
                 key={preset.label}
                 disabled={!isLive}
                 onClick={() => triggerPreset(preset)}
-                style={isLive ? { ...secondaryButtonStyle, fontSize: '10.5px', padding: '9px 8px' } : { ...disabledButtonStyle, fontSize: '10.5px', padding: '9px 8px' }}
+                style={isLive ? { ...secondaryButtonStyle, fontSize: '10.5px', padding: '9px 10px' } : { ...disabledButtonStyle, fontSize: '10.5px', padding: '9px 10px' }}
               >
                 {preset.label.toUpperCase()}
               </button>
@@ -532,9 +601,9 @@ export default function App() {
             (the real IPv4 host-octet ceiling, not an arbitrary UX limit),
             but these inputs share the exact same bounds so nothing typed
             here silently gets clamped without the field reflecting it. */}
-        <div style={{ flexShrink: 0, padding: '10px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '8px' }}>
+        <div style={{ padding: '14px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 12px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '14px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Servers ({MIN_SERVERS}–{MAX_SERVERS})
               <input
@@ -554,7 +623,7 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: '8px' }}>
+          <div style={{ marginBottom: '14px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
               <span>Grace window</span>
               <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{graceWindowInput.toFixed(1)}s</span>
@@ -566,7 +635,7 @@ export default function App() {
               style={rangeInputStyle}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px', marginBottom: '14px' }}>
             <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Min packet</span>
@@ -592,7 +661,7 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '10px' }}>
             <button disabled={!isLive} onClick={triggerApplyConfig} style={isLive ? buttonStyle : disabledButtonStyle}>
               APPLY CONFIG
             </button>
@@ -610,7 +679,18 @@ export default function App() {
           state from the same useSimulationSocket() call above. */}
       <div style={{ gridArea: 'main', position: 'relative' }}>
         {!isLive && <ConnectingOverlay connectionStatus={connectionStatus} />}
-        <AlertToasts toasts={toasts} onDismiss={id => setToasts(ts => ts.filter(t => t.id !== id))} />
+        {/* Alert notifications — real backend Alerts only (pushed from the
+            flows-diffing effect above the instant a server's real status
+            transitions into 'alert', never simulated). Sonner's toast
+            stack is always position:fixed against the viewport (it
+            escapes any ancestor's position:relative, so mounting it here
+            vs. at the app root is equivalent) -- bottom-right is the one
+            viewport corner with no real controls under it: top-right sits
+            under the header's logo/connection status, top-center under
+            the header's roster cluster, bottom-left under the left
+            sidebar's Configure Infra card. Bottom-right only ever
+            overlaps trailing Live Console log text. */}
+        <Toaster theme="dark" richColors position="bottom-right" />
 
         {viewMode === '2d' ? (
           <TopologyMap
@@ -716,39 +796,6 @@ export default function App() {
         overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
-        {/* Roster count + overall status combined into one row instead of a
-            stacked heading + full-width banner — same real data, half the
-            vertical footprint. */}
-        <div style={{
-            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
-            padding: '9px 12px', borderRadius: '6px',
-            background: `${overallColor}1a`, border: `1px solid ${overallColor}4d`,
-        }}>
-            <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
-              {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
-            </span>
-            <span style={{
-                color: overallColor, fontWeight: 'bold', letterSpacing: '1px',
-                textTransform: 'uppercase', fontSize: '12px', textAlign: 'right',
-            }}>
-                {overallStatus === 'alert' ? `${alertCount}/${flows.length} ALERTING` : STATUS_LABEL[overallStatus]}
-            </span>
-        </div>
-
-        <div style={{ flexShrink: 0 }}>
-          <StatusLegend />
-          <ServerStatusGrid flows={flows} selectedId={selectedServerId} onSelect={setSelectedServerId} />
-        </div>
-
-        <div style={{ flexShrink: 0 }}>
-          <ServerDetailCard
-            flow={selectedFlow}
-            isLive={isLive}
-            onRemediate={triggerRemediate}
-            onSendRequest={triggerSendRequest}
-          />
-        </div>
-
         <AlertHistory entries={alertHistory} onSelect={setSelectedServerId} selectedServerId={selectedServerId} onOpenFullHistory={() => setHistoryOpen(true)} />
 
         {/* Full per-flow metadata + request history — every field here
@@ -796,16 +843,16 @@ export default function App() {
           bottom panel rather than squeezing a wide log into a sidebar. */}
       <div style={{
         gridArea: 'console', display: 'flex', flexDirection: 'column',
-        background: '#05070d', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        background: '#1e1e1e', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         <div style={{
-          padding: '8px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          padding: '5px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: '#252526', borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         }}>
-          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>
-            Live Console — tailing {selectedServerId ?? 'system'}
+          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#9d9d9d' }}>
+            ● Live Console — tailing {selectedServerId ?? 'system'}
           </span>
-          <button onClick={() => setHistoryOpen(true)} style={{ ...secondaryButtonStyle, padding: '6px 12px', fontSize: '11px' }}>
+          <button onClick={() => setHistoryOpen(true)} style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '9.5px' }}>
             Full History
           </button>
         </div>

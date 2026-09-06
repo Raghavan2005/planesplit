@@ -1,9 +1,26 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { FlowSnapshot } from '../../hooks/useSimulationSocket'
 import type { ActiveRequestEvent } from '../../hooks/useActiveRequestEvents'
 import { nodeKindFor, statusForNode, isResponsibleForActiveFault, type NodeKind, type NodeStatus } from '../topologyStatus'
-import { colors, status as STATUS_COLOR, nodeKindColor, requestStatusColor, requestStatusLabel, font } from '../../theme'
-import { computeMapPositions, collectEdges, realHops, pointAlongHops, type MapPositions } from './mapLayout'
+import { colors, status as STATUS_COLOR, nodeKindColor, requestStatusColor, requestStatusLabel, font, secondaryButtonStyle } from '../../theme'
+import { computeMapPositions, collectEdges, realHops, pointAlongHops, type MapPoint, type MapPositions } from './mapLayout'
+
+// Converts a client-space (mouse/pointer) coordinate into the SVG's own
+// user-space coordinate system, correctly accounting for the viewBox scale
+// and centering `preserveAspectRatio="xMidYMid meet"` applies -- a plain
+// clientX/clientY delta divided by a guessed scale factor would drift as
+// soon as the panel isn't exactly viewBox-sized, which it almost never is.
+function toSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): MapPoint {
+  const pt = svg.createSVGPoint()
+  pt.x = clientX
+  pt.y = clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return { x: clientX, y: clientY }
+  const svgP = pt.matrixTransform(ctm.inverse())
+  return { x: svgP.x, y: svgP.y }
+}
+
+const DRAG_THRESHOLD_PX = 3
 
 // 2D counterpart to the 3D scene (App.tsx's <Canvas> + scene/* components) --
 // same real per-node status (statusForNode/isResponsibleForActiveFault,
@@ -37,16 +54,89 @@ export function TopologyMap({ flows, selectedServerId, onSelectServer, activeReq
   const edges = collectEdges(flows.flatMap((f) => [f.cp_trace, f.dp_trace]))
   const nodeIds = ['Users', 'Firewall', 'AWS_ALB', ...serverIds]
 
+  // Manual, session-only repositioning -- every node still starts at its
+  // real computed tier/row layout (`positions` above, unchanged), this only
+  // layers per-id pixel overrides on top once a judge/demo-er drags a node
+  // to declutter a busy diagram. Never persisted, never fed back into any
+  // real state (topology, status, edges are all still computed from the
+  // exact same `flows`) -- purely a client-side view convenience.
+  const [dragOverrides, setDragOverrides] = useState<MapPositions>({})
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const dragStateRef = useRef<{ id: string; pointerId: number; offset: MapPoint; moved: boolean } | null>(null)
+
+  const effectivePositions = useMemo(
+    () => ({ ...positions, ...dragOverrides }),
+    [positions, dragOverrides],
+  )
+
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
+
+  const handleNodePointerDown = (id: string) => (e: ReactPointerEvent<SVGGElement>) => {
+    const svg = svgRef.current
+    if (!svg) return
+    const pointer = toSvgPoint(svg, e.clientX, e.clientY)
+    const current = effectivePositions[id]
+    if (!current) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragStateRef.current = {
+      id,
+      pointerId: e.pointerId,
+      offset: { x: current.x - pointer.x, y: current.y - pointer.y },
+      moved: false,
+    }
+  }
+
+  const handleNodePointerMove = (id: string) => (e: ReactPointerEvent<SVGGElement>) => {
+    const drag = dragStateRef.current
+    const svg = svgRef.current
+    if (!drag || !svg || drag.id !== id || drag.pointerId !== e.pointerId) return
+    const pointer = toSvgPoint(svg, e.clientX, e.clientY)
+    const nextX = pointer.x + drag.offset.x
+    const nextY = pointer.y + drag.offset.y
+    if (!drag.moved) {
+      const start = effectivePositions[id]
+      if (start && Math.hypot(nextX - start.x, nextY - start.y) < DRAG_THRESHOLD_PX) return
+      drag.moved = true
+    }
+    setDragOverrides((prev) => ({
+      ...prev,
+      [id]: { x: clamp(nextX, 24, width - 24), y: clamp(nextY, 24, height - 24) },
+    }))
+  }
+
+  const handleNodePointerUp = (id: string, onSelect: (() => void) | undefined) => (e: ReactPointerEvent<SVGGElement>) => {
+    const drag = dragStateRef.current
+    if (drag && drag.id === id && drag.pointerId === e.pointerId) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+      const wasMoved = drag.moved
+      dragStateRef.current = null
+      // A drag that never crossed the threshold is a plain click -- fire
+      // the real select handler instead of silently swallowing the tap.
+      if (!wasMoved) onSelect?.()
+      return
+    }
+    onSelect?.()
+  }
+
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {Object.keys(dragOverrides).length > 0 && (
+        <button
+          onClick={() => setDragOverrides({})}
+          style={{ ...secondaryButtonStyle, position: 'absolute', top: 10, right: 10, zIndex: 1, padding: '5px 10px', fontSize: '10px' }}
+        >
+          RESET LAYOUT
+        </button>
+      )}
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${width} ${height}`}
         style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
         preserveAspectRatio="xMidYMid meet"
       >
         {edges.map(([a, b]) => {
-          const pa = positions[a]
-          const pb = positions[b]
+          const pa = effectivePositions[a]
+          const pb = effectivePositions[b]
           if (!pa || !pb) return null
           return (
             <line
@@ -58,28 +148,34 @@ export function TopologyMap({ flows, selectedServerId, onSelectServer, activeReq
         })}
 
         {flows.map((f) => (
-          <AmbientFlowDots key={f.server_id} flow={f} positions={positions} />
+          <AmbientFlowDots key={f.server_id} flow={f} positions={effectivePositions} />
         ))}
 
-        {nodeIds.map((id) => (
-          <MapNode
-            key={id}
-            id={id}
-            point={positions[id]}
-            kind={nodeKindFor(id)}
-            status={statusForNode(id, flows)}
-            isFaultOrigin={isResponsibleForActiveFault(id, flows)}
-            isSelected={id === selectedServerId}
-            onSelect={nodeKindFor(id) === 'server' ? () => onSelectServer(id) : undefined}
-          />
-        ))}
+        {nodeIds.map((id) => {
+          const onSelect = nodeKindFor(id) === 'server' ? () => onSelectServer(id) : undefined
+          return (
+            <MapNode
+              key={id}
+              id={id}
+              point={effectivePositions[id]}
+              kind={nodeKindFor(id)}
+              status={statusForNode(id, flows)}
+              isFaultOrigin={isResponsibleForActiveFault(id, flows)}
+              isSelected={id === selectedServerId}
+              onSelect={onSelect}
+              onPointerDown={handleNodePointerDown(id)}
+              onPointerMove={handleNodePointerMove(id)}
+              onPointerUp={handleNodePointerUp(id, onSelect)}
+            />
+          )
+        })}
 
         {/* Discrete, user-triggered requests -- visually distinct from the
             ambient dots above (brighter, larger, pulsing while in flight,
             ends in an explicit outcome label) and drawn last so they're
             never occluded by a node or an ambient dot. */}
         {activeRequestEvents.map((active) => (
-          <RequestMarker key={active.event.id} active={active} positions={positions} />
+          <RequestMarker key={active.event.id} active={active} positions={effectivePositions} />
         ))}
       </svg>
     </div>
@@ -138,19 +234,23 @@ interface MapNodeProps {
   isFaultOrigin: boolean
   isSelected: boolean
   onSelect: (() => void) | undefined
+  onPointerDown: (e: ReactPointerEvent<SVGGElement>) => void
+  onPointerMove: (e: ReactPointerEvent<SVGGElement>) => void
+  onPointerUp: (e: ReactPointerEvent<SVGGElement>) => void
 }
 
-function MapNode({ id, point, kind, status, isFaultOrigin, isSelected, onSelect }: MapNodeProps) {
+function MapNode({ id, point, kind, status, isFaultOrigin, isSelected, onPointerDown, onPointerMove, onPointerUp }: MapNodeProps) {
   if (!point) return null
   const ringColor = status ? STATUS_COLOR[status] : 'rgba(148, 163, 184, 0.4)'
   const fill = nodeKindColor[kind]
-  const clickable = onSelect !== undefined
 
   return (
     <g
       transform={`translate(${point.x}, ${point.y})`}
-      onClick={onSelect}
-      style={{ cursor: clickable ? 'pointer' : 'default' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      style={{ cursor: 'grab', touchAction: 'none' }}
     >
       {isFaultOrigin && (
         <circle r={30} fill="none" stroke={colors.danger} strokeWidth={2} opacity={0.6}>

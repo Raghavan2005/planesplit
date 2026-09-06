@@ -17,8 +17,8 @@ export function ServerStatusGrid({ flows, selectedId, onSelect }: ServerStatusGr
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fill, minmax(20px, 1fr))',
-      gap: '4px',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(12px, 1fr))',
+      gap: '3px',
       // Capped intentionally low: at realistic demo server counts (a
       // handful of tiles) this never gets close to the cap and never
       // scrolls. It only kicks in as a last-resort fallback at very high
@@ -26,9 +26,9 @@ export function ServerStatusGrid({ flows, selectedId, onSelect }: ServerStatusGr
       // amount of flex layout can fit hundreds of tiles on screen at once
       // without either scrolling this one grid or shrinking tiles into
       // illegibility.
-      maxHeight: '100px',
+      maxHeight: '60px',
       overflowY: 'auto',
-      padding: '4px 3px',
+      padding: '2px',
     }}>
       {flows.map(f => (
         <div
