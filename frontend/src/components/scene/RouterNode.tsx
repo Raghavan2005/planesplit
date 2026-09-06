@@ -1,8 +1,5 @@
-import { useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
 import { Billboard, Text } from '@react-three/drei'
-import * as THREE from 'three'
-import { applyStatusGlowColor, type FaultType, type GlowStatus } from './statusGlow'
+import { useStatusGlowMaterial, type FaultType, type GlowStatus } from './statusGlow'
 import type { NodeKind } from '../topologyStatus'
 
 // Firewall/AWS_ALB previously reused ServerRack's server-box geometry and
@@ -21,21 +18,7 @@ interface RouterNodeProps {
 }
 
 export function RouterNode({ kind, name, position, faultType, status }: RouterNodeProps) {
-  const matRef = useRef<THREE.MeshStandardMaterial>(null)
-
-  useFrame(({ clock }) => {
-    if (!matRef.current) return
-    const c = new THREE.Color()
-    applyStatusGlowColor(c, clock.getElapsedTime(), faultType, status)
-    
-    if (faultType === 'none' && status !== 'alert' && status !== 'tolerated') {
-        matRef.current.color.set(kind === 'gateway' ? '#4c1d3d' : '#0c2f3d')
-        matRef.current.emissive.setRGB(0, 0, 0)
-    } else {
-        matRef.current.color.copy(c)
-        matRef.current.emissive.copy(c).multiplyScalar(0.8)
-    }
-  })
+  const matRef = useStatusGlowMaterial(faultType, status, kind === 'gateway' ? '#4c1d3d' : '#0c2f3d')
 
   return (
     <group position={position}>

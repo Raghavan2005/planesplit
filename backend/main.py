@@ -31,12 +31,16 @@ async def _broadcast(message: dict) -> None:
     # relying on the next WebSocketDisconnect from that socket's own receive
     # loop to notice -- a socket that fails to send here would otherwise
     # linger in `clients` until it happens to be its own turn to disconnect.
-    dead: list[WebSocket] = []
-    for client in list(clients):
-        try:
-            await client.send_json(message)
-        except Exception:
-            dead.append(client)
+    # Fanned out concurrently via asyncio.gather (return_exceptions=True) so
+    # one slow/dead client can't head-of-line-block every other client's
+    # send -- same collect-then-remove end result as a sequential loop, just
+    # concurrent.
+    targets = list(clients)
+    results = await asyncio.gather(
+        *(client.send_json(message) for client in targets),
+        return_exceptions=True,
+    )
+    dead = [client for client, result in zip(targets, results) if isinstance(result, Exception)]
     for client in dead:
         if client in clients:
             clients.remove(client)

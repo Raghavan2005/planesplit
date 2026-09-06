@@ -1,4 +1,6 @@
-import type * as THREE from 'three'
+import { useRef } from 'react'
+import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 
 export type FaultType = 'none' | 'delay' | 'drop' | 'corrupt'
 export type GlowStatus = 'synced' | 'tolerated' | 'alert' | null
@@ -25,4 +27,35 @@ export function applyStatusGlowColor(color: THREE.Color, elapsedSeconds: number,
     // Normal cyan — synced (or no real traffic through this node right now)
     color.setRGB(0.2, 0.74, 0.97) // #38bdf8
   }
+}
+
+// Shared by ServerRack and RouterNode -- previously each duplicated an
+// identical useFrame block (same THREE.Color allocation, same
+// applyStatusGlowColor call, same idle-vs-active guard, same emissive
+// 0.8 multiplier) with only their idle-state color/emissive differing.
+// Extracted here so both call one shared hook instead of maintaining two
+// copies of the same logic. Behavior is unchanged -- pure dedup.
+export function useStatusGlowMaterial(
+  faultType: FaultType,
+  status: GlowStatus,
+  idleColor: string,
+  idleEmissive: [number, number, number] = [0, 0, 0],
+) {
+  const matRef = useRef<THREE.MeshStandardMaterial>(null)
+
+  useFrame(({ clock }) => {
+    if (!matRef.current) return
+    const c = new THREE.Color()
+    applyStatusGlowColor(c, clock.getElapsedTime(), faultType, status)
+
+    if (faultType === 'none' && status !== 'alert' && status !== 'tolerated') {
+      matRef.current.color.set(idleColor)
+      matRef.current.emissive.setRGB(...idleEmissive)
+    } else {
+      matRef.current.color.copy(c)
+      matRef.current.emissive.copy(c).multiplyScalar(0.8)
+    }
+  })
+
+  return matRef
 }

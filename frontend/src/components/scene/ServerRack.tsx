@@ -1,8 +1,5 @@
-import { useRef } from 'react'
-import { useFrame } from '@react-three/fiber'
 import { Billboard, Text } from '@react-three/drei'
-import * as THREE from 'three'
-import { applyStatusGlowColor, type FaultType, type GlowStatus } from './statusGlow'
+import { useStatusGlowMaterial, type FaultType, type GlowStatus } from './statusGlow'
 
 // Color is driven by two independent signals: `faultType` (the fault the
 // user actually requested, real per-node now via
@@ -19,24 +16,10 @@ interface ServerRackProps {
 }
 
 export function ServerRack({ name, position, faultType, status }: ServerRackProps) {
-  const matRef = useRef<THREE.MeshStandardMaterial>(null)
-
-  useFrame(({ clock }) => {
-    if (!matRef.current) return
-    const c = new THREE.Color()
-    applyStatusGlowColor(c, clock.getElapsedTime(), faultType, status)
-    
-    // For normal state (cyan), we want the main body to be mostly dark, but when there's an alert, we want the whole body to pulse/flash that color.
-    // Let's just apply it directly. It will make the whole box glow cyan when normal, which might be too bright.
-    // Let's dim the normal cyan for the body.
-    if (faultType === 'none' && status !== 'alert' && status !== 'tolerated') {
-        matRef.current.color.set("#0f172a")
-        matRef.current.emissive.setRGB(0, 0.05, 0.1) // subtle blue
-    } else {
-        matRef.current.color.copy(c)
-        matRef.current.emissive.copy(c).multiplyScalar(0.8)
-    }
-  })
+  // Idle body is mostly dark with a subtle blue emissive tint (rather than a
+  // bright cyan glow at rest); active fault/status states pulse/flash via
+  // the shared hook exactly as before.
+  const matRef = useStatusGlowMaterial(faultType, status, '#0f172a', [0, 0.05, 0.1])
 
   return (
     <group position={position}>

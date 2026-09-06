@@ -64,6 +64,42 @@ def test_broadcast_snapshot_drops_only_the_raising_client():
     assert good.sent[0]["type"] == "state"
 
 
+class SlowClient(StubClient):
+    """A broadcast target whose send_json takes real wall-clock time --
+    used to prove _broadcast fans sends out concurrently rather than
+    sequentially awaiting each one in turn."""
+
+    def __init__(self, delay: float):
+        super().__init__()
+        self.delay = delay
+
+    async def send_json(self, message: dict) -> None:
+        await asyncio.sleep(self.delay)
+        self.sent.append(message)
+
+
+def test_broadcast_fans_out_concurrently_not_sequentially():
+    """Regression test for the sequential-broadcast perf issue: two equally
+    slow clients must be sent to concurrently (~1x the per-client delay
+    total), not sequentially (~2x)."""
+    main_module.state.reset()
+    main_module.clients.clear()
+    slow_a = SlowClient(0.05)
+    slow_b = SlowClient(0.05)
+    main_module.clients.extend([slow_a, slow_b])
+
+    async def timed() -> float:
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+        await main_module.broadcast_snapshot()
+        return loop.time() - start
+
+    elapsed = asyncio.run(timed())
+    assert elapsed < 0.09  # well under the 0.1s a sequential loop would take
+    assert len(slow_a.sent) == 1
+    assert len(slow_b.sent) == 1
+
+
 def test_lifespan_creates_and_cancels_its_background_task():
     async def run():
         async with main_module.lifespan(main_module.app):

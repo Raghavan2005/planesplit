@@ -72,7 +72,21 @@ const REQUEST_HISTORY_LIMIT = 50
 function mergeRequestEvents(existing: RequestEvent[], incoming: RequestEvent[]): RequestEvent[] {
   const byId = new Map(existing.map((e) => [e.id, e]))
   for (const event of incoming) byId.set(event.id, event)
-  return [...byId.values()].sort((a, b) => a.sent_at - b.sent_at).slice(-REQUEST_HISTORY_LIMIT)
+  const merged = [...byId.values()].sort((a, b) => a.sent_at - b.sent_at).slice(-REQUEST_HISTORY_LIMIT)
+
+  // Events are immutable once created (send_request/RequestEvent fields
+  // never change after the fact), so if the merge produced the exact same
+  // ids in the exact same order as `existing`, it's a genuine no-op --
+  // return the SAME reference rather than a fresh array, so React's
+  // setState bails out instead of forcing a re-render on every ~300ms tick
+  // even when recent_requests carried nothing new.
+  if (
+    merged.length === existing.length &&
+    merged.every((event, i) => event.id === existing[i].id)
+  ) {
+    return existing
+  }
+  return merged
 }
 
 /**
