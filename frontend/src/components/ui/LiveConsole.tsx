@@ -45,7 +45,8 @@ export function LiveConsole({ logs, filterTag }: LiveConsoleProps) {
     }}>
       {visible.length === 0 && <div style={{ color: '#5a5a5a' }}>No events yet.</div>}
       {visible.map(l => {
-        const firstWord = l.message.slice(0, l.message.indexOf(' ')) || l.message
+        const firstSpace = l.message.indexOf(' ')
+        const firstWord = firstSpace === -1 ? l.message : l.message.slice(0, firstSpace)
         const statusColor = REQUEST_STATUSES.has(firstWord) ? requestStatusColor[firstWord as keyof typeof requestStatusColor] : undefined
         return (
           <div key={l.id} style={{ whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis', color: '#d4d4d4' }}>

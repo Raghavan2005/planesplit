@@ -465,11 +465,11 @@ export default function App() {
 
           {selectedFlow && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 1, minWidth: 0, maxWidth: '220px' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[selectedFlow.status], boxShadow: `0 0 8px ${STATUS_COLOR[selectedFlow.status]}`, flexShrink: 0 }} />
                 <span
                   title={`${selectedFlow.server_id} (${selectedFlow.flow})`}
-                  style={{ fontSize: '11px', color: '#f1f5f9', fontWeight: 600, whiteSpace: 'nowrap' }}
+                  style={{ fontSize: '11px', color: '#f1f5f9', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', minWidth: 0 }}
                 >
                   {selectedFlow.server_id} <span style={{ fontWeight: 400, color: '#64748b' }}>({selectedFlow.flow})</span>
                 </span>

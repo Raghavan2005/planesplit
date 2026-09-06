@@ -38,17 +38,10 @@ interface TopologyMapProps {
 }
 
 export function TopologyMap({ flows, selectedServerId, onSelectServer, activeRequestEvents }: TopologyMapProps) {
-  if (flows.length === 0) {
-    return (
-      <div style={{
-        width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        color: colors.textMuted, fontFamily: font.sans, fontSize: '13px',
-      }}>
-        No servers in the topology yet.
-      </div>
-    )
-  }
-
+  // Computed unconditionally (never behind the empty-roster early return
+  // below) because the hooks right after depend on them -- React requires
+  // every hook to run in the same order on every render, and computeMapPositions/
+  // collectEdges are safe to call with an empty serverIds array.
   const serverIds = flows.map((f) => f.server_id)
   const { positions, width, height } = computeMapPositions(serverIds)
   const edges = collectEdges(flows.flatMap((f) => [f.cp_trace, f.dp_trace]))
@@ -63,6 +56,20 @@ export function TopologyMap({ flows, selectedServerId, onSelectServer, activeReq
   const [dragOverrides, setDragOverrides] = useState<MapPositions>({})
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStateRef = useRef<{ id: string; pointerId: number; offset: MapPoint; moved: boolean } | null>(null)
+
+  // Clears any dragged positions the instant the real roster changes
+  // (scale/reset/preset) -- without this, a server id that happens to
+  // survive the change (e.g. "Server", present at nearly every count)
+  // stays pinned at its stale dragged pixel position, overlapping the
+  // freshly computed layout right after a demo-critical reset.
+  const rosterKey = serverIds.join('|')
+  const prevRosterKeyRef = useRef(rosterKey)
+  useEffect(() => {
+    if (prevRosterKeyRef.current !== rosterKey) {
+      prevRosterKeyRef.current = rosterKey
+      setDragOverrides({})
+    }
+  }, [rosterKey])
 
   const effectivePositions = useMemo(
     () => ({ ...positions, ...dragOverrides }),
@@ -116,6 +123,17 @@ export function TopologyMap({ flows, selectedServerId, onSelectServer, activeReq
       return
     }
     onSelect?.()
+  }
+
+  if (flows.length === 0) {
+    return (
+      <div style={{
+        width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: colors.textMuted, fontFamily: font.sans, fontSize: '13px',
+      }}>
+        No servers in the topology yet.
+      </div>
+    )
   }
 
   return (
