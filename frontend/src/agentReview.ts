@@ -91,8 +91,12 @@ export function generateAgentReview(flow: FlowSnapshot, correlatedGroup: RootCau
       ? `${flow.server_id}: divergence detected at ${flow.fault_node} — ${flow.reason}`
       : `${flow.server_id}: divergence detected at ${faultNode}.`,
     evidence,
-    recommendation: flow.fault_node
-      ? `Run REMEDIATE on ${flow.fault_node} to restore convergence.`
-      : 'Run REMEDIATE on the affected server to restore convergence.',
+    // Named after flow.server_id, not flow.fault_node: the REMEDIATE
+    // action/button is keyed strictly by server_id, but fault_node is a
+    // topology node name (e.g. "Firewall", or "Users" per
+    // backend/tests/test_state.py) that can legitimately be an
+    // infrastructure hop with no REMEDIATE control of its own -- naming it
+    // here would recommend an action the UI has no way to actually take.
+    recommendation: `Run REMEDIATE on ${flow.server_id} to restore convergence.`,
   }
 }

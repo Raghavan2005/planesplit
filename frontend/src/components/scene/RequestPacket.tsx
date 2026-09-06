@@ -35,7 +35,7 @@ export function RequestPacket({ active, nodePositions }: RequestPacketProps) {
   // completed.
   const path = event.status === 'delivered' ? event.cp_trace : event.dp_trace
 
-  const curve = useMemo(() => {
+  const { curve, singlePoint } = useMemo(() => {
     const points = path
       .filter((p) => p !== 'DROP' && p !== 'LOOP' && nodePositions[p])
       .map((p) => {
@@ -43,8 +43,15 @@ export function RequestPacket({ active, nodePositions }: RequestPacketProps) {
         v.y += 1.5
         return v
       })
-    if (points.length < 2) return null
-    return new THREE.CatmullRomCurve3(points, false, 'chordal', 0.1)
+    // A real single-hop dp_trace (e.g. a packet dropped at its very first
+    // hop -- see backend/tests/test_state.py::
+    // test_send_request_reports_dropped_when_the_packet_has_no_route_at_all)
+    // has nothing to travel along, but it's still a real event that must be
+    // shown, not silently hidden. map/TopologyMap.tsx's pointAlongHops
+    // already handles this length-1 case explicitly for the 2D view.
+    if (points.length === 0) return { curve: null, singlePoint: null as THREE.Vector3 | null }
+    if (points.length === 1) return { curve: null, singlePoint: points[0] }
+    return { curve: new THREE.CatmullRomCurve3(points, false, 'chordal', 0.1), singlePoint: null }
   }, [path, nodePositions])
 
   useFrame(() => {
@@ -58,8 +65,21 @@ export function RequestPacket({ active, nodePositions }: RequestPacketProps) {
     }
   })
 
-  if (!curve) return null
+  if (!curve && !singlePoint) return null
   const color = requestStatusColor[event.status]
+
+  if (!curve && singlePoint) {
+    // No travel to animate -- render the same outcome-label treatment used
+    // once a multi-hop packet arrives, positioned at that one real hop,
+    // instead of inventing a separate visual style for this case.
+    return (
+      <Billboard position={[singlePoint.x, singlePoint.y + 0.9, singlePoint.z]}>
+        <Text fontSize={0.45} color={color} outlineWidth={0.05} outlineColor="#000000">
+          {requestStatusLabel[event.status]}
+        </Text>
+      </Billboard>
+    )
+  }
 
   return (
     <>
