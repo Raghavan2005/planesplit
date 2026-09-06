@@ -87,7 +87,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "error", "message": "malformed JSON payload"})
                 continue
 
-            result = handle_action(state, raw)
+            try:
+                result = handle_action(state, raw)
+            except AssertionError as exc:
+                # handle_action's own safety net for an unmatched action type
+                # (see its docstring) -- not reachable with today's 5 matched
+                # actions, but if it ever fires it must report a structured
+                # error and keep the loop (and clients cleanup) going, the
+                # same as any other rejected message, rather than escaping
+                # uncaught and silently killing this connection's task.
+                await websocket.send_json({"type": "error", "message": str(exc)})
+                continue
+
             if result is None:
                 await broadcast_snapshot()
             elif result.get("type") == "error":

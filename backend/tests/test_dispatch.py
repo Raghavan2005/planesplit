@@ -113,3 +113,16 @@ def test_send_request_for_unknown_server_id_returns_error_not_exception():
     assert result is not None
     assert result["type"] == "error"
     assert "unknown server_id" in result["message"]
+
+
+def test_update_route_with_unknown_target_server_id_returns_error_not_exception():
+    sim = SimulationState(clock=FakeClock())
+    sim.scale(2, 1)
+    before = sim.snapshot().to_dict()
+    result = handle_action(sim, {
+        "action": "update_route", "fault": "drop", "target_server_id": "NoSuchServer",
+    })
+    assert result is not None
+    assert result["type"] == "error"
+    assert "unknown target_server_id" in result["message"]
+    assert sim.snapshot().to_dict() == before  # rejected before mutating anything

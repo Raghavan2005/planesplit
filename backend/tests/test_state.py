@@ -243,6 +243,28 @@ def test_scale_grace_window_is_configurable():
     assert snap.status == "alert"
 
 
+def test_delay_fault_uses_the_configured_grace_window_not_a_fixed_constant():
+    """Regression test: the 'delay' fault's duration must scale with the
+    instance's own grace_window_seconds, not a fixed module constant --
+    otherwise a configured grace window larger than the old fixed ~3s delay
+    converges long before the grace window ever elapses, so the flow never
+    reaches 'alert' and the delay-fault demo silently breaks."""
+    clock = FakeClock()
+    sim = SimulationState(clock=clock)
+    sim.scale(1, 1, grace_window_seconds=8.0)
+
+    snap = sim.inject("delay")
+    assert snap.status == "tolerated"
+
+    clock.advance(8.1)  # past the configured 8s grace window
+    snap = sim.tick()
+    assert snap.status == "alert"
+
+    clock.advance(1.5)  # past grace_window(8.0) + delay margin(1.0) = 9.0s total
+    snap = sim.tick()
+    assert snap.status == "synced"
+
+
 def test_scale_packet_size_range_is_configurable():
     clock = FakeClock()
     sim = SimulationState(clock=clock)
@@ -278,16 +300,16 @@ def test_inject_with_target_server_id_only_faults_that_server():
     assert by_id["Server_3"].status == "synced"
 
 
-def test_inject_with_unknown_target_server_id_faults_all():
-    clock = FakeClock()
-    sim = SimulationState(clock=clock)
+def test_inject_with_unknown_target_server_id_raises_value_error():
+    """Matches remediate()/send_request()'s existing convention: a stale
+    target_server_id (e.g. from before scale() shrank the roster) must
+    surface as a real error, not silently fault every flow instead of the
+    one intended."""
+    sim = SimulationState(clock=FakeClock())
     sim.scale(2, 1)
 
-    sim.inject("drop", target_server_id="NoSuchServer")
-    clock.advance(GRACE_WINDOW_SECONDS + 0.1)
-    snap = sim.tick()
-
-    assert all(f.status == "alert" for f in snap.flows)
+    with pytest.raises(ValueError, match="unknown target_server_id"):
+        sim.inject("drop", target_server_id="NoSuchServer")
 
 
 def test_remediate_fixes_an_alerted_flow_and_reconverges():

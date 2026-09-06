@@ -64,11 +64,17 @@ GRACE_WINDOW_SECONDS = UpdateChannel.GRACE_WINDOW_SECONDS  # same constant as th
 MIN_SERVERS, MAX_SERVERS = 1, 254
 MIN_USERS, MAX_USERS = 1, 254
 
+# Each lambda takes the *instance's own* grace_window_seconds so "delay"
+# scales with whatever the user configured via the `scale` action's
+# grace_window_seconds param, instead of a fixed module constant --
+# otherwise a configured grace window larger than the old fixed ~3s delay
+# would converge long before ever reaching ALERT, silently breaking the
+# delay-fault demo. The other fault modes ignore the argument.
 _FAULT_MAP = {
-    "none": lambda: InjectedFault(mode=FaultMode.NONE),
-    "delay": lambda: InjectedFault(mode=FaultMode.DELAY, delay_seconds=GRACE_WINDOW_SECONDS + 1.0),
-    "drop": lambda: InjectedFault(mode=FaultMode.DROP),
-    "corrupt": lambda: InjectedFault(mode=FaultMode.CORRUPT, corrupt_prefixlen_delta=1),
+    "none": lambda grace_window_seconds: InjectedFault(mode=FaultMode.NONE),
+    "delay": lambda grace_window_seconds: InjectedFault(mode=FaultMode.DELAY, delay_seconds=grace_window_seconds + 1.0),
+    "drop": lambda grace_window_seconds: InjectedFault(mode=FaultMode.DROP),
+    "corrupt": lambda grace_window_seconds: InjectedFault(mode=FaultMode.CORRUPT, corrupt_prefixlen_delta=1),
 }
 
 # Real, citable constraint (IEEE 802.3), not an arbitrary number: a
@@ -346,13 +352,14 @@ class SimulationState:
         target_server_id optionally restricts the fault to a single
         server's flow (for the multi-flow root-cause demo where only one
         backend actually breaks). None (the default) keeps today's
-        all-flows behavior. If target_server_id doesn't match any current
-        server (e.g. a stale selection from before scale() shrank the
-        roster), fall back to faulting all flows rather than silently
-        doing nothing.
+        all-flows behavior. Raises ValueError if target_server_id doesn't
+        match any current server (e.g. a stale selection from before
+        scale() shrank the roster), matching remediate()/send_request()'s
+        existing convention -- a stale id should surface as a real error,
+        not silently fault every flow instead of the one intended.
         """
         now = self._clock()
-        fault = _FAULT_MAP.get(fault_name, _FAULT_MAP["none"])()
+        fault = _FAULT_MAP.get(fault_name, _FAULT_MAP["none"])(self.grace_window_seconds)
 
         if target_server_id is None:
             flows_to_fault = self.flows
@@ -361,8 +368,8 @@ class SimulationState:
                 flow for sid, flow in zip(self.server_ids, self.flows)
                 if sid == target_server_id
             ]
-        if not flows_to_fault:
-            flows_to_fault = self.flows
+            if not flows_to_fault:
+                raise ValueError(f"unknown target_server_id {target_server_id!r}")
 
         for flow in flows_to_fault:
             current_next_hop = self.net.routers["Users"].rib.get(flow)

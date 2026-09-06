@@ -118,6 +118,32 @@ def test_send_request_broadcasts_request_event_then_snapshot_to_every_client():
     assert observer in main_module.clients
 
 
+def test_assertion_error_from_dispatch_is_caught_and_reported(monkeypatch):
+    """Regression test for dispatch.handle_action's documented-but-uncaught
+    safety net: an AssertionError (e.g. a future action added to
+    schemas.py without a matching dispatch branch) must be turned into a
+    structured error to the sender, keep the connection alive, and still
+    clean up `clients` on eventual disconnect -- not escape uncaught and
+    silently kill the connection's task."""
+    main_module.state.reset()
+    main_module.clients.clear()
+
+    def fake_handle_action(state, raw):
+        raise AssertionError("no dispatch branch for validated action type FakeAction")
+
+    monkeypatch.setattr(main_module, "handle_action", fake_handle_action)
+    socket = StubSocket([{"action": "reset"}])
+
+    asyncio.run(main_module.websocket_endpoint(socket))
+
+    assert socket.sent[0]["type"] == "state"  # initial snapshot on connect
+    assert socket.sent[1] == {
+        "type": "error",
+        "message": "no dispatch branch for validated action type FakeAction",
+    }
+    assert socket not in main_module.clients  # cleaned up after WebSocketDisconnect
+
+
 def test_unknown_action_sends_error_only_to_the_sender_not_a_broadcast():
     main_module.state.reset()
     main_module.clients.clear()
