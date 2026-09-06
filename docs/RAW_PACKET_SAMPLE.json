@@ -1,0 +1,36 @@
+{
+  "_description": "This shows the raw data structures used to simulate and verify network divergence in PlaneSplit.",
+  
+  "internal_routing_packet": {
+    "_note": "This represents the pure algorithmic Packet object passing through the Longest Prefix Match (LPM) router tables in Python.",
+    "src": "10.0.0.1",
+    "dst": "10.0.1.254",
+    "trace": [
+      "Users",
+      "AWS_ALB",
+      "DROP"
+    ]
+  },
+
+  "telemetry_event_payload": {
+    "_note": "This is the enriched packet telemetry event sent over WebSockets to the 3D frontend after the Control Plane and Data Plane paths are compared.",
+    "type": "request_event",
+    "id": "e4f8d9b2a1c045b88f3a9e7d6c5b4a3f",
+    "server_id": "Server",
+    "flow": "10.0.1.0/24",
+    "sent_at": 1716382910.452,
+    "cp_trace": [
+      "Users",
+      "AWS_ALB",
+      "Server"
+    ],
+    "dp_trace": [
+      "Users",
+      "AWS_ALB",
+      "DROP"
+    ],
+    "status": "diverged",
+    "reason": "Intended path was ['Users', 'AWS_ALB', 'Server'] but actual path was ['Users', 'AWS_ALB', 'DROP']",
+    "packet_size_bytes": 1420
+  }
+}
