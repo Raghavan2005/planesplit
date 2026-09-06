@@ -749,7 +749,7 @@ export default function App() {
           />
         </div>
 
-        <AlertHistory entries={alertHistory} onSelect={setSelectedServerId} selectedServerId={selectedServerId} />
+        <AlertHistory entries={alertHistory} onSelect={setSelectedServerId} selectedServerId={selectedServerId} onOpenFullHistory={() => setHistoryOpen(true)} />
 
         {/* Full per-flow metadata + request history — every field here
             already comes from a real FlowSnapshot/RequestEvent flowing
