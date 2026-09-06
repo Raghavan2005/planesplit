@@ -387,8 +387,8 @@ export default function App() {
       width: '100vw', height: '100vh', background: colors.bgDeep, overflow: 'hidden',
       fontFamily: font.sans, color: colors.textPrimary,
       display: 'grid',
-      gridTemplateColumns: '300px 1fr 340px',
-      gridTemplateRows: '72px 1fr 200px',
+      gridTemplateColumns: '320px 1fr 360px',
+      gridTemplateRows: '76px 1fr 208px',
       gridTemplateAreas: `"header header header" "left main right" "console console console"`,
     }}>
 
@@ -400,13 +400,13 @@ export default function App() {
         padding: '0 20px', background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(12px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '3px', height: '30px', background: '#38bdf8', borderRadius: '2px' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '3px', height: '32px', background: '#38bdf8', borderRadius: '2px' }} />
           <div>
-            <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9' }}>
+            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 600, letterSpacing: '0.2px', lineHeight: '1.2', color: '#f1f5f9' }}>
               PlaneSplit
             </h1>
-            <p style={{ margin: 0, fontSize: '11px', color: '#94a3b8' }}>
+            <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
               Control-plane / data-plane consistency
             </p>
           </div>
@@ -421,7 +421,7 @@ export default function App() {
               onClick={() => setViewMode('3d')}
               style={{
                 ...(viewMode === '3d' ? buttonStyle : secondaryButtonStyle),
-                padding: '6px 14px', fontSize: '10px',
+                padding: '7px 16px', fontSize: '11px',
               }}
             >
               3D
@@ -430,7 +430,7 @@ export default function App() {
               onClick={() => setViewMode('2d')}
               style={{
                 ...(viewMode === '2d' ? buttonStyle : secondaryButtonStyle),
-                padding: '6px 14px', fontSize: '10px',
+                padding: '7px 16px', fontSize: '11px',
               }}
             >
               2D MAP
@@ -446,14 +446,14 @@ export default function App() {
               boxShadow: `0 0 8px ${isLive ? '#22c55e' : connectionStatus === 'connecting' ? '#fbbf24' : '#ef4444'}`,
             }} />
             <span style={{
-              fontSize: '11px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase',
+              fontSize: '12px', letterSpacing: '1px', color: '#64748b', textTransform: 'uppercase',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px',
             }}>
               {isLive ? 'Live — connected to backend' : connectionStatus === 'connecting' ? 'Connecting to backend…' : 'Disconnected — retrying…'}
             </span>
           </div>
           <div style={{
-            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '8px', padding: '5px 10px',
+            background: 'rgba(248, 250, 252, 0.92)', borderRadius: '8px', padding: '6px 12px',
             boxShadow: '0 8px 20px -6px rgba(0, 0, 0, 0.4)', display: 'flex', alignItems: 'center',
           }}>
             <img src="/myonsite-logo-transparent.png" alt="myOnsite HealthCare" style={{ height: '38px', display: 'block' }} />
@@ -465,8 +465,8 @@ export default function App() {
           width, own scroll region, no longer competing with the 3D scene
           for screen space. */}
       <div style={{
-        gridArea: 'left', padding: '12px', minHeight: 0,
-        display: 'flex', flexDirection: 'column', gap: '8px',
+        gridArea: 'left', padding: '14px', minHeight: 0,
+        display: 'flex', flexDirection: 'column', gap: '10px',
         overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderRight: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
@@ -511,15 +511,15 @@ export default function App() {
             click. Deliberately visually distinct (neutral secondary style)
             from the danger/warning fault buttons above, since these apply
             a full scenario rather than a single fault. */}
-        <div style={{ flexShrink: 0, padding: '8px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
+        <div style={{ flexShrink: 0, padding: '10px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Scenario Presets</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px' }}>
             {PRESETS.map(preset => (
               <button
                 key={preset.label}
                 disabled={!isLive}
                 onClick={() => triggerPreset(preset)}
-                style={isLive ? { ...secondaryButtonStyle, fontSize: '9.5px', padding: '8px 6px' } : { ...disabledButtonStyle, fontSize: '9.5px', padding: '8px 6px' }}
+                style={isLive ? { ...secondaryButtonStyle, fontSize: '10.5px', padding: '9px 8px' } : { ...disabledButtonStyle, fontSize: '10.5px', padding: '9px 8px' }}
               >
                 {preset.label.toUpperCase()}
               </button>
@@ -532,10 +532,10 @@ export default function App() {
             (the real IPv4 host-octet ceiling, not an arbitrary UX limit),
             but these inputs share the exact same bounds so nothing typed
             here silently gets clamped without the field reflecting it. */}
-        <div style={{ flexShrink: 0, padding: '8px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-          <h3 style={{ margin: '0 0 6px 0', fontSize: '10px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '6px' }}>
-            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
+        <div style={{ flexShrink: 0, padding: '10px', background: 'rgba(0,0,0,0.25)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', letterSpacing: '1px' }}>Configure Infra</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Servers ({MIN_SERVERS}–{MAX_SERVERS})
               <input
                 type="number" min={MIN_SERVERS} max={MAX_SERVERS} value={serverInput}
@@ -544,7 +544,7 @@ export default function App() {
                 style={numberInputStyle}
               />
             </label>
-            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               Users ({MIN_USERS}–{MAX_USERS})
               <input
                 type="number" min={MIN_USERS} max={MAX_USERS} value={userInput}
@@ -554,8 +554,8 @@ export default function App() {
               />
             </label>
           </div>
-          <div style={{ marginBottom: '6px' }}>
-            <label style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
               <span>Grace window</span>
               <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{graceWindowInput.toFixed(1)}s</span>
             </label>
@@ -566,8 +566,8 @@ export default function App() {
               style={rangeInputStyle}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '6px' }}>
-            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '8px', marginBottom: '8px' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Min packet</span>
                 <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{minPacketInput}B</span>
@@ -579,7 +579,7 @@ export default function App() {
                 style={rangeInputStyle}
               />
             </label>
-            <label style={{ fontSize: '10px', color: '#94a3b8' }}>
+            <label style={{ fontSize: '11px', color: '#94a3b8' }}>
               <span style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span>Max packet</span>
                 <span style={{ color: '#f8fafc', fontWeight: 'bold' }}>{maxPacketInput}B</span>
@@ -711,14 +711,8 @@ export default function App() {
           and root-cause correlation. Own scroll region, independent of
           the left sidebar and the 3D viewport. */}
       <div style={{
-        gridArea: 'right', padding: '12px', minHeight: 0,
-        // 6px, not 8px: with AlertHistory added as a new fixed-height
-        // section, this small trim is part of what keeps AnalysisPanel's
-        // own flexible request-history area from being squeezed to zero at
-        // the real 1536x864 demo viewport under a live alert (confirmed via
-        // a DOM height check, not a guess) — see AnalysisPanel's panelStyle
-        // comment for the matching trim on its own internal gap.
-        display: 'flex', flexDirection: 'column', gap: '6px',
+        gridArea: 'right', padding: '14px', minHeight: 0,
+        display: 'flex', flexDirection: 'column', gap: '8px',
         overflowY: 'auto', overflowX: 'hidden',
         background: 'rgba(15, 23, 42, 0.5)', borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
@@ -727,15 +721,15 @@ export default function App() {
             vertical footprint. */}
         <div style={{
             flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px',
-            padding: '7px 10px', borderRadius: '6px',
+            padding: '9px 12px', borderRadius: '6px',
             background: `${overallColor}1a`, border: `1px solid ${overallColor}4d`,
         }}>
-            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
               {flows.length} server{flows.length > 1 ? 's' : ''}, {numUsers} user{numUsers > 1 ? 's' : ''}
             </span>
             <span style={{
                 color: overallColor, fontWeight: 'bold', letterSpacing: '1px',
-                textTransform: 'uppercase', fontSize: '11px', textAlign: 'right',
+                textTransform: 'uppercase', fontSize: '12px', textAlign: 'right',
             }}>
                 {overallStatus === 'alert' ? `${alertCount}/${flows.length} ALERTING` : STATUS_LABEL[overallStatus]}
             </span>
@@ -783,12 +777,12 @@ export default function App() {
             servers share a responsible_router, i.e. the shared-ingress
             fault case scale() + inject() are built to demonstrate. */}
         {rootCauses.length > 0 && (
-            <div style={{ flexShrink: 0, padding: '6px 10px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px', maxHeight: '42px', overflow: 'hidden' }}>
-                <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '2px' }}>
+            <div style={{ flexShrink: 0, padding: '8px 12px', background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.3)', borderRadius: '8px', maxHeight: '50px', overflow: 'hidden' }}>
+                <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#fbbf24', fontWeight: 'bold', marginBottom: '3px' }}>
                     Root Cause Analysis
                 </div>
                 {rootCauses.slice(0, 1).map((rc, i) => (
-                    <div key={i} title={`${rc.flows.length} servers (${rc.flows.join(', ')}) all diverge at the same router: ${rc.responsible_router}. Reported as one shared root cause, not ${rc.flows.length} separate alerts.`} style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                    <div key={i} title={`${rc.flows.length} servers (${rc.flows.join(', ')}) all diverge at the same router: ${rc.responsible_router}. Reported as one shared root cause, not ${rc.flows.length} separate alerts.`} style={{ fontSize: '11px', color: '#cbd5e1', lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
                         <b>{rc.flows.length} servers</b> ({rc.flows.join(', ')}) diverge at <b>{rc.responsible_router}</b> — one shared root cause, not {rc.flows.length} alerts.
                     </div>
                 ))}
@@ -805,13 +799,13 @@ export default function App() {
         background: '#05070d', borderTop: '1px solid rgba(255, 255, 255, 0.08)',
       }}>
         <div style={{
-          padding: '6px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
         }}>
-          <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>
+          <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#64748b' }}>
             Live Console — tailing {selectedServerId ?? 'system'}
           </span>
-          <button onClick={() => setHistoryOpen(true)} style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '10px' }}>
+          <button onClick={() => setHistoryOpen(true)} style={{ ...secondaryButtonStyle, padding: '6px 12px', fontSize: '11px' }}>
             Full History
           </button>
         </div>
