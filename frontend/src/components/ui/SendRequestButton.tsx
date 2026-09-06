@@ -19,7 +19,7 @@ export function SendRequestButton({ serverId, isLive, onSendRequest }: SendReque
     <button
       disabled={!isLive}
       onClick={() => onSendRequest(serverId)}
-      style={{ ...(isLive ? buttonStyle : disabledButtonStyle), padding: '6px 10px', fontSize: '10px', whiteSpace: 'nowrap' }}
+      style={{ ...(isLive ? buttonStyle : disabledButtonStyle), padding: '8px 12px', fontSize: '11px', whiteSpace: 'nowrap' }}
     >
       SEND TEST REQUEST
     </button>

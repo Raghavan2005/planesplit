@@ -8,11 +8,11 @@ const ITEMS: Array<['synced' | 'tolerated' | 'alert', string]> = [
 
 export function StatusLegend() {
   return (
-    <div style={{ display: 'flex', gap: '12px', marginBottom: '4px' }}>
+    <div style={{ display: 'flex', gap: '14px', marginBottom: '6px' }}>
       {ITEMS.map(([key, label]) => (
-        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <div style={{ width: '7px', height: '7px', borderRadius: '2px', background: STATUS_COLOR[key] }} />
-          <span style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: STATUS_COLOR[key] }} />
+          <span style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
         </div>
       ))}
     </div>

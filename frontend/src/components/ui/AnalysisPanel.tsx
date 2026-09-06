@@ -110,13 +110,13 @@ export function formatElapsed(epochSeconds: number): string {
 }
 
 const panelStyle = {
-  padding: '10px',
+  padding: '12px',
   background: 'rgba(0,0,0,0.3)',
   borderRadius: '8px',
   border: '1px solid rgba(255,255,255,0.05)',
   display: 'flex',
   flexDirection: 'column',
-  gap: '3px',
+  gap: '5px',
   width: '100%',
   // No `minHeight: 0` / `overflow: hidden` here (there was previously,
   // before Agent Review/Alert History were added) — that combination let
@@ -127,11 +127,11 @@ const panelStyle = {
   // in App.tsx: the fix is to let this panel take its natural content
   // height and let the *sidebar's* own overflowY: auto scroll any excess
   // into view, rather than silently destroying content client-side.
-  lineHeight: '1.25',
+  lineHeight: '1.3',
 } as const
 
 const mutedNoteStyle = {
-  fontSize: '11px',
+  fontSize: '12px',
   color: colors.textMuted,
 } as const
 
@@ -139,9 +139,9 @@ function SectionTitle({ children, small }: { children: ReactNode; small?: boolea
   return (
     <div style={{
       flexShrink: 0,
-      fontSize: small ? '10px' : '11px', fontWeight: 'bold', color: colors.textPrimary,
+      fontSize: small ? '11px' : '12.5px', fontWeight: 'bold', color: colors.textPrimary,
       textTransform: small ? 'uppercase' : 'none', letterSpacing: small ? '0.5px' : 'normal',
-      marginTop: small ? '4px' : 0,
+      marginTop: small ? '5px' : 0,
     }}>
       {children}
     </div>
@@ -151,14 +151,14 @@ function SectionTitle({ children, small }: { children: ReactNode; small?: boolea
 function HopList({ label, hops, highlight }: { label: string; hops: string[]; highlight?: boolean }) {
   return (
     <div style={{ flexShrink: 0 }}>
-      <div style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.5px', color: colors.textMuted, marginBottom: '2px' }}>
+      <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', color: colors.textMuted, marginBottom: '3px' }}>
         {label}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '3px' }}>
         {hops.map((hop, i) => (
-          <span key={`${hop}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          <span key={`${hop}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
             <HopChip hop={hop} highlight={highlight} />
-            {i < hops.length - 1 && <span style={{ color: colors.textDim, fontSize: '9px' }}>→</span>}
+            {i < hops.length - 1 && <span style={{ color: colors.textDim, fontSize: '10px' }}>→</span>}
           </span>
         ))}
       </div>
@@ -183,8 +183,8 @@ function HopChip({ hop, highlight }: { hop: string; highlight?: boolean }) {
     <span
       title={kind ? `${hop} — ${KIND_ABBR[kind]}` : hop}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: '2px', lineHeight: '1.2',
-        padding: '1px 4px', borderRadius: '4px', fontSize: '9px', fontFamily: font.mono,
+        display: 'inline-flex', alignItems: 'center', gap: '3px', lineHeight: '1.2',
+        padding: '2px 5px', borderRadius: '4px', fontSize: '10px', fontFamily: font.mono,
         background: highlight ? 'rgba(251, 191, 36, 0.08)' : 'rgba(255,255,255,0.04)',
         color: colors.textPrimary, fontWeight: isOutcomeMarker ? 'bold' : 'normal',
       }}>
@@ -200,8 +200,8 @@ function HopChip({ hop, highlight }: { hop: string; highlight?: boolean }) {
 function FieldRow({ label, value, clamp }: { label: string; value: string; clamp?: boolean }) {
   return (
     <div style={{
-      display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '10px', lineHeight: '1.25',
-      padding: '2px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0,
+      display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '11px', lineHeight: '1.3',
+      padding: '3px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0,
     }}>
       <span style={{ color: colors.textMuted, flexShrink: 0 }}>{label}</span>
       <span style={{
@@ -236,12 +236,12 @@ function AgentReviewSection({ flow, correlatedGroup }: { flow: FlowSnapshot; cor
     <div style={{ flexShrink: 0 }}>
       <SectionTitle small>Agent Review</SectionTitle>
       <div style={{
-        marginTop: '1px', padding: '3px 6px', borderRadius: '6px',
+        marginTop: '2px', padding: '5px 8px', borderRadius: '6px',
         background: `${accent}14`, border: `1px solid ${accent}40`,
       }}>
         <div
           style={{
-            fontSize: '10px', fontWeight: 'bold', color: accent, lineHeight: '1.3', marginBottom: '2px',
+            fontSize: '11px', fontWeight: 'bold', color: accent, lineHeight: '1.3', marginBottom: '3px',
             overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
           }}
         >
@@ -255,16 +255,16 @@ function AgentReviewSection({ flow, correlatedGroup }: { flow: FlowSnapshot; cor
             triggered alert. Only scrolls in the pathological case, same
             defensive pattern as ServerStatusGrid/AlertHistory. */}
         <ul style={{
-          margin: '0 0 2px 0', padding: '0 0 0 14px', display: 'flex', flexDirection: 'column', gap: '1px',
-          maxHeight: '84px', overflowY: 'auto',
+          margin: '0 0 3px 0', padding: '0 0 0 15px', display: 'flex', flexDirection: 'column', gap: '2px',
+          maxHeight: '96px', overflowY: 'auto',
         }}>
           {review.evidence.map((line, i) => (
-            <li key={i} style={{ fontSize: '9.5px', color: colors.textSecondary, lineHeight: '1.25' }}>{line}</li>
+            <li key={i} style={{ fontSize: '10.5px', color: colors.textSecondary, lineHeight: '1.3' }}>{line}</li>
           ))}
         </ul>
         <div
           style={{
-            fontSize: '10px', color: colors.textPrimary, fontWeight: 'bold', lineHeight: '1.3',
+            fontSize: '11px', color: colors.textPrimary, fontWeight: 'bold', lineHeight: '1.3',
             overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const,
           }}
         >
@@ -285,16 +285,16 @@ function RequestHistoryRow({ event, highlighted }: { event: RequestEvent; highli
   const path = event.status === 'delivered' ? event.cp_trace : event.dp_trace
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 6px', borderRadius: '4px', flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 8px', borderRadius: '4px', flexShrink: 0,
       background: highlighted ? 'rgba(56, 189, 248, 0.06)' : 'rgba(0,0,0,0.2)',
       border: `1px solid ${highlighted ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255,255,255,0.05)'}`,
     }}>
-      <span style={{ fontSize: '9px', fontWeight: 'bold', color, letterSpacing: '0.3px', flexShrink: 0, width: '48px' }}>{requestStatusLabel[event.status]}</span>
-      <span style={{ fontSize: '10px', fontWeight: 'bold', color: colors.textPrimary, flexShrink: 0 }}>{event.server_id}</span>
-      <span style={{ fontSize: '9px', color: colors.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+      <span style={{ fontSize: '10px', fontWeight: 'bold', color, letterSpacing: '0.3px', flexShrink: 0, width: '52px' }}>{requestStatusLabel[event.status]}</span>
+      <span style={{ fontSize: '11px', fontWeight: 'bold', color: colors.textPrimary, flexShrink: 0 }}>{event.server_id}</span>
+      <span style={{ fontSize: '10px', color: colors.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
         {path.join('→')}{event.reason ? ` · ${event.reason}` : ''}
       </span>
-      <span style={{ fontSize: '9px', color: colors.textDim, flexShrink: 0 }}>{formatElapsed(event.sent_at)}</span>
+      <span style={{ fontSize: '10px', color: colors.textDim, flexShrink: 0 }}>{formatElapsed(event.sent_at)}</span>
     </div>
   )
 }

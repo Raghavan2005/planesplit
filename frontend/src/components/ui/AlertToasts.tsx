@@ -23,7 +23,7 @@ export function AlertToasts({ toasts, onDismiss }: AlertToastsProps) {
   return (
     <div style={{
       position: 'absolute', top: '12px', right: '12px', zIndex: 30,
-      display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '320px',
+      display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '340px',
       pointerEvents: 'none',
     }}>
       {toasts.map(t => (

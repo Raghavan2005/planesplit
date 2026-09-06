@@ -52,13 +52,13 @@ export function FullHistoryModal({ open, onClose, logs, requestEvents }: FullHis
       >
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 20px', borderBottom: `1px solid ${colors.border}`, flexShrink: 0,
+          padding: '16px 22px', borderBottom: `1px solid ${colors.border}`, flexShrink: 0,
         }}>
           <div>
-            <div style={{ color: colors.textHeading, fontSize: '14px', fontWeight: 'bold', letterSpacing: '0.4px' }}>
+            <div style={{ color: colors.textHeading, fontSize: '15px', fontWeight: 'bold', letterSpacing: '0.4px' }}>
               Full History
             </div>
-            <div style={{ color: colors.textMuted, fontSize: '11px', marginTop: '2px' }}>
+            <div style={{ color: colors.textMuted, fontSize: '12px', marginTop: '3px' }}>
               Every event and every action taken this session — unfiltered, unlimited by viewport height.
             </div>
           </div>
@@ -78,7 +78,7 @@ export function FullHistoryModal({ open, onClose, logs, requestEvents }: FullHis
         <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', gap: '1px', background: colors.border }}>
           <div style={{ flex: '1 1 55%', minWidth: 0, display: 'flex', flexDirection: 'column', background: colors.bgConsole }}>
             <SectionHeader>Event Log ({logs.length})</SectionHeader>
-            <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '6px 16px', fontFamily: font.mono, fontSize: '11px', lineHeight: '1.6' }}>
+            <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '8px 18px', fontFamily: font.mono, fontSize: '12px', lineHeight: '1.6' }}>
               {logsNewestFirst.length === 0 ? (
                 <div style={{ color: colors.textDim }}>No events yet.</div>
               ) : (
@@ -95,7 +95,7 @@ export function FullHistoryModal({ open, onClose, logs, requestEvents }: FullHis
 
           <div style={{ flex: '1 1 45%', minWidth: 0, display: 'flex', flexDirection: 'column', background: colors.bgConsole }}>
             <SectionHeader>Actions &amp; Outcomes ({requestEvents.length})</SectionHeader>
-            <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
               {requestsNewestFirst.length === 0 ? (
                 <div style={{ color: colors.textDim, fontSize: '11px', fontFamily: font.mono }}>No requests sent yet.</div>
               ) : (
@@ -112,7 +112,7 @@ export function FullHistoryModal({ open, onClose, logs, requestEvents }: FullHis
 function SectionHeader({ children }: { children: ReactNode }) {
   return (
     <div style={{
-      padding: '6px 16px', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '1px',
+      padding: '8px 18px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px',
       color: colors.textMuted, borderBottom: `1px solid ${colors.borderSubtle}`, flexShrink: 0,
     }}>
       {children}
@@ -130,20 +130,20 @@ function RequestRow({ event }: { event: RequestEvent }) {
   const path = event.status === 'delivered' ? event.cp_trace : event.dp_trace
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: '4px', flexShrink: 0,
+      display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 10px', borderRadius: '4px', flexShrink: 0,
       background: 'rgba(0,0,0,0.2)', border: `1px solid ${colors.borderSubtle}`,
     }}>
-      <span style={{ fontSize: '9px', fontWeight: 'bold', color, letterSpacing: '0.3px', flexShrink: 0, width: '48px' }}>
+      <span style={{ fontSize: '10px', fontWeight: 'bold', color, letterSpacing: '0.3px', flexShrink: 0, width: '52px' }}>
         {requestStatusLabel[event.status]}
       </span>
-      <span style={{ fontSize: '10px', fontWeight: 'bold', color: colors.textPrimary, flexShrink: 0 }}>{event.server_id}</span>
+      <span style={{ fontSize: '11px', fontWeight: 'bold', color: colors.textPrimary, flexShrink: 0 }}>{event.server_id}</span>
       <span style={{
-        fontSize: '9px', color: colors.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden',
+        fontSize: '10px', color: colors.textSecondary, whiteSpace: 'nowrap', overflow: 'hidden',
         textOverflow: 'ellipsis', flex: 1, minWidth: 0,
       }}>
         {path.join('→')}{event.reason ? ` · ${event.reason}` : ''}
       </span>
-      <span style={{ fontSize: '9px', color: colors.textDim, flexShrink: 0 }}>{formatElapsed(event.sent_at)}</span>
+      <span style={{ fontSize: '10px', color: colors.textDim, flexShrink: 0 }}>{formatElapsed(event.sent_at)}</span>
     </div>
   )
 }

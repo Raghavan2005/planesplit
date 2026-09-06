@@ -158,7 +158,7 @@ function MapNode({ id, point, kind, status, isFaultOrigin, isSelected, onSelect 
         </circle>
       )}
       <NodeShape kind={kind} fill={fill} ringColor={isSelected ? '#ffffff' : ringColor} ringWidth={isSelected ? 4 : 2.5} />
-      <text y={kind === 'server' ? 40 : 34} textAnchor="middle" fontSize={11} fill={colors.textSecondary} fontFamily={font.sans}>
+      <text y={kind === 'server' ? 40 : 34} textAnchor="middle" fontSize={12} fill={colors.textSecondary} fontFamily={font.sans}>
         {id}
       </text>
     </g>
@@ -211,7 +211,7 @@ function RequestMarker({ active, positions }: { active: ActiveRequestEvent; posi
       </circle>
       {arrived && (
         <text
-          x={point.x} y={point.y - 18} textAnchor="middle" fontSize={10} fontWeight="bold"
+          x={point.x} y={point.y - 18} textAnchor="middle" fontSize={11} fontWeight="bold"
           fill={color} fontFamily={font.sans}
         >
           {requestStatusLabel[event.status]}

@@ -37,8 +37,8 @@ export function LiveConsole({ logs, filterTag }: LiveConsoleProps) {
   return (
     <div style={{
       height: '100%', overflow: 'hidden', boxSizing: 'border-box',
-      fontFamily: font.mono, fontSize: '11px',
-      padding: '6px 16px', lineHeight: '1.55',
+      fontFamily: font.mono, fontSize: '12px',
+      padding: '8px 18px', lineHeight: '1.55',
     }}>
       {visible.length === 0 && <div style={{ color: '#475569' }}>No events yet.</div>}
       {visible.map(l => (

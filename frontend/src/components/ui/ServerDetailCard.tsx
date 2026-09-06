@@ -26,22 +26,25 @@ export function ServerDetailCard({ flow, isLive, onRemediate, onSendRequest }: S
   if (!flow) return null
   const isAlert = flow.status === 'alert'
   return (
-    <div style={{ padding: '7px 10px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-      <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: STATUS_COLOR[flow.status], boxShadow: `0 0 8px ${STATUS_COLOR[flow.status]}`, flexShrink: 0 }} />
-      {/* Identity is the one thing here allowed to shrink — it truncates
-          with an ellipsis (full value still on hover via title) rather than
-          forcing the two action buttons' own labels to get any smaller,
-          since the buttons' text is what a judge actually needs to read to
-          operate the demo. This is what fixed the real bug: at up to two
-          full-width buttons plus a long "Server (10.x.x.x/24)" label, the
-          unclamped version overflowed this 340px sidebar horizontally. */}
-      <div
-        title={`${flow.server_id} (${flow.flow})`}
-        style={{ fontSize: '11px', color: '#f8fafc', fontWeight: 'bold', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-      >
-        {flow.server_id} <span style={{ fontWeight: 'normal', color: '#64748b' }}>({flow.flow})</span>
+    <div style={{ padding: '10px 12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {/* Identity gets its own full-width row now that the roomier button
+          padding/font (theme.ts) would otherwise squeeze a long
+          "Server (10.x.x.x/24)" label down to just an ellipsis when sharing
+          a row with up to two full-size action buttons — verified live: at
+          the old single-row layout, REMEDIATE + SEND TEST REQUEST at their
+          new size left almost no room and the identity truncated to "S.".
+          Still clamped to one line with a title tooltip as a safety net for
+          extreme id lengths, just no longer fighting the buttons for space. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ width: '9px', height: '9px', borderRadius: '50%', background: STATUS_COLOR[flow.status], boxShadow: `0 0 8px ${STATUS_COLOR[flow.status]}`, flexShrink: 0 }} />
+        <div
+          title={`${flow.server_id} (${flow.flow})`}
+          style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 'bold', flex: '1 1 auto', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
+          {flow.server_id} <span style={{ fontWeight: 'normal', color: '#64748b' }}>({flow.flow})</span>
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: '5px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
         {isAlert && <RemediateButton serverId={flow.server_id} status={flow.status} isLive={isLive} onRemediate={onRemediate} />}
         <SendRequestButton serverId={flow.server_id} isLive={isLive} onSendRequest={onSendRequest} />
       </div>
